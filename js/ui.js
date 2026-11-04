@@ -116,7 +116,7 @@
     if (showDate) parts.push(esc(T.relLabel(o.occDate || o.date)));
     if (o.endDate) parts.push(`${icon('calendar', 13)}${esc(T.fmtDate(o.date, false))}~${esc(T.fmtDate(o.endDate, false))}${o.dayIndex ? ` · ${o.dayIndex}/${o.dayTotal}일째` : ''}`);
     if (o.location) parts.push(`${icon('pin', 13)}${esc(o.location)}`);
-    if (o.repeat && o.repeat.freq !== 'none') parts.push(`${icon('repeat', 13)}${S.REPEAT[o.repeat.freq]}`);
+    if (o.repeat && o.repeat.freq !== 'none') parts.push(`${icon('repeat', 13)}${S.repeatLabel(o.repeat)}`);
     if (o.reminders && o.reminders.length) parts.push(`${icon('bell', 13)}${o.reminders.map(m => (m ? T.durK(m) + ' 전' : '정시')).join(', ')}`);
     parts.push(`${catDot(o.category)}${esc(o.category)}`);
     return parts.map(p => `<span>${p}</span>`).join('');
@@ -148,6 +148,9 @@
       <label class="field"><span>중요도</span><select name="priority">${Object.entries(S.PRIORITY).map(([k, v]) => `<option value="${k}" ${k === d.priority ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="field"><span>반복</span><select name="repeat">${Object.entries(S.REPEAT).map(([k, v]) => `<option value="${k}" ${k === (d.repeat && d.repeat.freq) ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="field"><span>반복 종료일</span><input type="date" name="until" value="${esc((d.repeat && d.repeat.until) || '')}"></label>
+      <div class="field full" data-days-wrap ${d.repeat && d.repeat.freq === 'weekly' ? '' : 'hidden'}><span>반복할 요일</span><div class="chips" data-days>
+        ${[1, 2, 3, 4, 5, 6, 0].map(n => { const on = d.repeat && d.repeat.days ? d.repeat.days.includes(n) : T.isDate(d.date) && T.dow(d.date) === n; return `<label class="chip-check"><input type="checkbox" value="${n}" ${on ? 'checked' : ''}><span>${T.DOW[n]}</span></label>`; }).join('')}
+      </div></div>
       <div class="field full"><span>알림</span><div class="chips" data-reminders>
         ${REMINDER_OPTS.map(([v, l]) => `<label class="chip-check"><input type="checkbox" value="${v}" ${rem.includes(v) ? 'checked' : ''}><span>${l}</span></label>`).join('')}
         <label class="chip-input"><input type="number" min="1" max="10080" name="customRem" placeholder="직접(분)" value="${custom[0] || ''}"><span>분 전</span></label>
@@ -156,6 +159,12 @@
       ${opts.showDone ? `<label class="field full check-line"><input type="checkbox" name="done" ${d.done ? 'checked' : ''}> 완료한 일정</label>` : ''}
     </div>`;
   }
+  // 폼 안에서 반복을 '매주'로 고르면 요일 선택을 보여 준다
+  document.addEventListener('change', e => {
+    if (!e.target.matches('[data-form] [name="repeat"]')) return;
+    const w = e.target.closest('[data-form]').querySelector('[data-days-wrap]');
+    if (w) w.hidden = e.target.value !== 'weekly';
+  });
   function readForm(root) {
     const f = root.querySelector('[data-form]');
     const v = n => { const el = f.querySelector(`[name="${n}"]`); return el ? el.value.trim() : ''; };
@@ -165,7 +174,7 @@
     const doneEl = f.querySelector('[name="done"]');
     const out = {
       title: v('title'), date: v('date'), endDate: v('endDate') && v('endDate') !== v('date') ? v('endDate') : null, start: v('start') || null, end: v('end') || null, location: v('location'),
-      category: v('category'), priority: v('priority'), repeat: { freq: v('repeat'), until: v('until') || null }, reminders
+      category: v('category'), priority: v('priority'), repeat: { freq: v('repeat'), until: v('until') || null, days: v('repeat') === 'weekly' ? [...f.querySelectorAll('[data-days] input:checked')].map(i => +i.value) : null }, reminders
     };
     const desc = f.querySelector('[name="description"]');
     if (desc) out.description = desc.value.trim();
@@ -178,6 +187,7 @@
     if (d.end && !d.start) return '종료 시간만 있을 수는 없어요. 시작 시간을 입력해 주세요.';
     if (d.start && d.end && T.toMin(d.end) <= T.toMin(d.start)) return '종료 시간이 시작 시간보다 늦어야 해요.';
     if (d.repeat && d.repeat.until && d.repeat.until < d.date) return '반복 종료일이 시작 날짜보다 빨라요.';
+    if (d.repeat && d.repeat.freq === 'weekly' && d.repeat.days && !d.repeat.days.length) return '반복할 요일을 하나 이상 골라 주세요.';
     if (d.endDate && !T.isDate(d.endDate)) return '끝나는 날을 확인해 주세요.';
     if (d.endDate && d.endDate < d.date) return '끝나는 날이 시작일보다 빨라요.';
     if (d.endDate && T.diff(d.date, d.endDate) > 366) return '여러 날 일정은 1년까지만 만들 수 있어요.';

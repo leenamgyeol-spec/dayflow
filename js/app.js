@@ -186,7 +186,7 @@
           <dt>시간</dt><dd>${p.start ? esc(p.start + (p.end ? ' – ' + p.end : '')) : '<span class="muted">미정</span>'}</dd>
           ${p.location ? `<dt>장소</dt><dd>${esc(p.location)}</dd>` : ''}
           <dt>분류</dt><dd>${U.catDot(p.category)}${esc(p.category)} · 중요도 ${S.PRIORITY[p.priority]}</dd>
-          ${p.repeat.freq !== 'none' ? `<dt>반복</dt><dd>${S.REPEAT[p.repeat.freq]}</dd>` : ''}
+          ${p.repeat.freq !== 'none' ? `<dt>반복</dt><dd>${S.repeatLabel(p.repeat)}</dd>` : ''}
           ${p.reminders ? `<dt>알림</dt><dd>${p.reminders.length ? p.reminders.map(x => T.durK(x) + ' 전').join(', ') : '없음'}</dd>` : ''}
         </dl>
         ${p.assumptions.length ? `<ul class="plain small">${p.assumptions.map(a => `<li>${icon('alert', 13, 'warn')} ${esc(a)}</li>`).join('')}</ul>` : ''}

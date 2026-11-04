@@ -228,7 +228,23 @@
       }],
       [/매달|매월/, () => ({ freq: 'monthly' })]
     ];
+    // "월수금", "매주 화목", "수금 4시" — 여러 요일 반복
+    const multi = /(?:^|\s)(매주\s*)?([월화수목금토일]{2,7})(?:요일)?(마다|에는|엔|에)?(?=\s|$)/.exec(work);
+    if (multi) {
+      const chars = [...multi[2]];
+      const unique = new Set(chars).size === chars.length;
+      const after = work.slice(multi.index + multi[0].length);
+      const sure = multi[1] || multi[3] === '마다' || chars.length >= 3 || /^\s*(?:오전|오후|아침|저녁|밤|\d)/.test(after);
+      if (unique && sure && multi[2] !== '금일') {
+        const days = chars.map(c => DAYMAP[c]);
+        r.repeat = { freq: 'weekly', days };
+        r.date = days.map(d => upcoming(today, d)).sort()[0];
+        const lead = multi[0].length - multi[0].trimStart().length;
+        work = mask(work, multi.index + lead, multi[0].length - lead);
+      }
+    }
     for (const [re, fn] of rep) {
+      if (r.repeat.freq !== 'none') break;
       if ((m = re.exec(work))) {
         const v = fn(m);
         r.repeat = { freq: v.freq };

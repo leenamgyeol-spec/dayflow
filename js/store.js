@@ -43,6 +43,9 @@
     e.category = CATEGORIES.includes(e.category) ? e.category : '기타';
     const rp = e.repeat && typeof e.repeat === 'object' ? e.repeat : { freq: e.repeat || 'none' };
     e.repeat = { freq: REPEAT[rp.freq] ? rp.freq : 'none', until: T.isDate(rp.until) ? rp.until : null };
+    // 매주 반복할 요일 여러 개 (0=일 … 6=토). 없으면 시작 날짜의 요일
+    const days = e.repeat.freq === 'weekly' && Array.isArray(rp.days) ? [...new Set(rp.days.map(Number).filter(d => d >= 0 && d <= 6))].sort() : [];
+    e.repeat.days = days.length ? days : null;
     // 여러 날 일정: date ~ endDate (반복 일정과 함께 쓰지 않는다, 최대 1년)
     e.endDate = e.repeat.freq === 'none' && T.isDate(e.endDate) && e.endDate > e.date && T.diff(e.date, e.endDate) <= 366 ? e.endDate : null;
     e.reminders = Array.isArray(e.reminders)
@@ -138,6 +141,11 @@
 
   // ───────── 반복·여러 날 일정 펼치기 ─────────
   /** 날짜별로 따로 완료·삭제되는 일정(반복 또는 여러 날) */
+  function repeatLabel(rp) {
+    if (!rp || rp.freq === 'none') return '';
+    if (rp.freq === 'weekly' && rp.days) return '매주 ' + [1, 2, 3, 4, 5, 6, 0].filter(d => rp.days.includes(d)).map(d => T.DOW[d]).join('·');
+    return REPEAT[rp.freq];
+  }
   function isSeries(ev) { return ev.repeat.freq !== 'none' || !!ev.endDate; }
   function lastDate(ev) { return ev.endDate || (ev.repeat.freq === 'none' ? ev.date : ev.repeat.until); }
   function occursOn(ev, date) {
@@ -148,7 +156,7 @@
       case 'none': return date === ev.date || (!!ev.endDate && date <= ev.endDate);
       case 'daily': return true;
       case 'weekdays': { const d = T.dow(date); return d >= 1 && d <= 5; }
-      case 'weekly': return T.dow(date) === T.dow(ev.date);
+      case 'weekly': return ev.repeat.days ? ev.repeat.days.includes(T.dow(date)) : T.dow(date) === T.dow(ev.date);
       case 'monthly': return T.ymd(date).d === T.ymd(ev.date).d;
       default: return false;
     }
@@ -345,7 +353,8 @@
         lines.push('DTSTART;VALUE=DATE:' + dt(e.date), 'DTEND;VALUE=DATE:' + dt(T.addDays(e.endDate || e.date, 1)));
       }
       if (e.endDate && e.start) lines.push('RRULE:FREQ=DAILY;UNTIL=' + dt(e.endDate) + 'T235959');
-      if (e.repeat.freq !== 'none') lines.push('RRULE:' + rr[e.repeat.freq] + (e.repeat.until ? ';UNTIL=' + dt(e.repeat.until) + 'T235959' : ''));
+      const byDay = e.repeat.days ? ';BYDAY=' + e.repeat.days.map(d => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][d]).join(',') : '';
+      if (e.repeat.freq !== 'none') lines.push('RRULE:' + rr[e.repeat.freq] + byDay + (e.repeat.until ? ';UNTIL=' + dt(e.repeat.until) + 'T235959' : ''));
       if (e.location) lines.push('LOCATION:' + esc(e.location));
       if (e.description) lines.push('DESCRIPTION:' + esc(e.description));
       lines.push('CATEGORIES:' + esc(e.category), 'END:VEVENT');
@@ -360,7 +369,7 @@
     get ready() { return state.ready; },
     init, onChange: fn => { listeners.add(fn); return () => listeners.delete(fn); },
     getKV, setKV, saveSettings,
-    add, update, remove, restore, get, all, normalize, isSeries,
+    add, update, remove, restore, get, all, normalize, isSeries, repeatLabel,
     occurrences, on, setDone, moveOcc, skipOcc,
     conflicts, duplicates, freeSlot, gapsOn, span, search,
     listBackups, restoreBackup, exportData, importData, wipe, toICS
