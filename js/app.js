@@ -224,12 +224,12 @@
     let title, body;
     if (cal.mode === 'month') {
       const ms = T.monthStart(cal.anchor), me = T.monthEnd(cal.anchor);
-      const gs = T.weekStart(ms), ge = T.addDays(T.weekStart(me), 6);
+      const gs = T.weekStartSun(ms), ge = T.addDays(T.weekStartSun(me), 6);
       const occs = S.occurrences(gs, ge);
       const { y, m } = T.ymd(ms);
       title = `${y}년 ${m}월`;
       body = `<div class="month">
-        ${['월', '화', '수', '목', '금', '토', '일'].map(d => `<div class="mhead ${d === '토' ? 'sat' : d === '일' ? 'sun' : ''}">${d}</div>`).join('')}
+        ${['일', '월', '화', '수', '목', '금', '토'].map(d => `<div class="mhead ${d === '토' ? 'sat' : d === '일' ? 'sun' : ''}">${d}</div>`).join('')}
         ${T.range(gs, ge).map(d => {
           const list = occs.filter(o => o.occDate === d);
           const cls = [d < ms || d > me ? 'out' : '', d === today ? 'today' : '', d === cal.selected ? 'sel' : '', T.dow(d) === 0 ? 'sun' : T.dow(d) === 6 ? 'sat' : ''].join(' ');
@@ -241,7 +241,7 @@
         }).join('')}
       </div>`;
     } else {
-      const ws = T.weekStart(cal.anchor), we = T.addDays(ws, 6);
+      const ws = T.weekStartSun(cal.anchor), we = T.addDays(ws, 6);
       title = `${T.fmtDate(ws, false)} – ${T.fmtDate(we, false)}`;
       body = `<div class="week">${T.range(ws, we).map(d => {
         const list = S.on(d);

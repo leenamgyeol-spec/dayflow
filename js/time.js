@@ -35,7 +35,8 @@
   }
   function dow(s) { return new Date(utc(s)).getUTCDay(); }
   function diff(a, b) { return Math.round((utc(b) - utc(a)) / 864e5); }
-  function weekStart(s) { return addDays(s, -((dow(s) + 6) % 7)); } // 월요일 시작
+  function weekStart(s) { return addDays(s, -((dow(s) + 6) % 7)); } // 월요일 시작 ("이번 주/다음 주" 해석용)
+  function weekStartSun(s) { return addDays(s, -dow(s)); } // 일요일 시작 (화면 표시용)
   function monthStart(s) { const { y, m } = ymd(s); return make(y, m, 1); }
   function monthEnd(s) { const { y, m } = ymd(s); return make(y, m, daysInMonth(y, m)); }
   function range(a, b) { const out = []; for (let d = a; d <= b; d = addDays(d, 1)) out.push(d); return out; }
@@ -84,7 +85,7 @@
 
   DF.time = {
     TZ, DOW, DOW_LONG, pad, now, ymd, utc, make, daysInMonth, addDays, addMonths, dow, diff,
-    weekStart, monthStart, monthEnd, range, isDate, isTime, toMin, fromMin, epoch,
+    weekStart, weekStartSun, monthStart, monthEnd, range, isDate, isTime, toMin, fromMin, epoch,
     fmtDate, fmtDateLong, timeK, durK, rel, relLabel
   };
 })(window.DF = window.DF || {});
