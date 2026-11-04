@@ -161,7 +161,7 @@
     const m = U.modal(`<div class="modal-head"><h2>빠른 추가</h2><button class="icon-btn" data-close aria-label="닫기">${icon('x')}</button></div>
       <div class="modal-body">
         <div class="nl-input"><span>${icon('spark', 16)}</span><input id="qa-text" autofocus placeholder="예: 내일 오후 5시에 친구랑 축구하기" aria-label="한 문장으로 일정 입력"></div>
-        <p class="muted small">날짜, 시간, 장소(“~에서”), 반복(“매주 화요일”), 알림(“30분 전 알림”)을 알아들어요.</p>
+        <p class="muted small">날짜, 기간(“12월 1일부터 9일까지”), 시간, 장소(“~에서”), 반복(“매주 화요일”), 알림(“30분 전 알림”)을 알아들어요.</p>
         <div id="qa-preview"></div>
       </div>
       <div class="modal-foot"><button class="btn ghost" data-detail>직접 입력</button><span class="grow"></span><button class="btn ghost" data-close>취소</button><button class="btn primary" data-save disabled>등록</button></div>`, { wide: true });
@@ -182,7 +182,7 @@
         <p class="card-title">인식한 내용</p>
         <dl class="recog-grid">
           <dt>제목</dt><dd>${p.title ? esc(p.title) : '<span class="warn-text">없음</span>'}</dd>
-          <dt>날짜</dt><dd>${p.date ? esc(T.relLabel(p.date)) : '<span class="warn-text">없음 → 오늘</span>'}</dd>
+          <dt>날짜</dt><dd>${p.date ? esc(T.relLabel(p.date)) + (p.endDate ? ` ~ ${esc(T.fmtDate(p.endDate))} <span class="muted">(${T.diff(p.date, p.endDate) + 1}일간)</span>` : '') : '<span class="warn-text">없음 → 오늘</span>'}</dd>
           <dt>시간</dt><dd>${p.start ? esc(p.start + (p.end ? ' – ' + p.end : '')) : '<span class="muted">미정</span>'}</dd>
           ${p.location ? `<dt>장소</dt><dd>${esc(p.location)}</dd>` : ''}
           <dt>분류</dt><dd>${U.catDot(p.category)}${esc(p.category)} · 중요도 ${S.PRIORITY[p.priority]}</dd>
@@ -199,7 +199,7 @@
     inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && !save.disabled) { e.preventDefault(); update(); save.click(); } });
     const toDraft = () => {
       const p = parsed;
-      return { title: p.title, date: p.date || T.now().date, start: p.start, end: p.end, location: p.location, category: p.category, priority: p.priority, repeat: p.repeat, reminders: p.reminders || (p.start ? [S.settings.defaultReminder] : []), people: p.people };
+      return { title: p.title, date: p.date || T.now().date, endDate: p.endDate, start: p.start, end: p.end, location: p.location, category: p.category, priority: p.priority, repeat: p.repeat, reminders: p.reminders || (p.start ? [S.settings.defaultReminder] : []), people: p.people };
     };
     save.addEventListener('click', async () => {
       if (!parsed || !parsed.title) return;
@@ -207,7 +207,7 @@
       if (r === 'edit') { m.close(); U.openEvent(null, toDraft()); return; }
       if (!r) return;
       m.close();
-      U.toast(`‘${esc(r.title)}’ — ${esc(T.relLabel(r.date))} ${r.start || '시간 미정'} 등록했어요.`);
+      U.toast(`‘${esc(r.title)}’ — ${esc(T.relLabel(r.date))}${r.endDate ? ' ~ ' + esc(T.fmtDate(r.endDate)) : ''} ${r.start || '시간 미정'} 등록했어요.`);
     });
     m.el.querySelector('[data-detail]').addEventListener('click', () => {
       const d = parsed && parsed.title ? toDraft() : { date: presetDate || T.now().date };

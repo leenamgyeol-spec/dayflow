@@ -243,8 +243,8 @@
         const r = await U.saveWithChecks(draft);
         if (r === 'edit') return;
         if (!r) return resolveCard(c.dataset.card, '취소했어요');
-        resolveCard(c.dataset.card, `${T.fmtDate(r.date)} ${r.start || '시간 미정'} 등록 완료`);
-        say(`${qj(r.title, '을/를')} ${esc(T.relLabel(r.date))}${r.start ? ' ' + esc(T.timeK(r.start)) : ''}에 등록했어요.`);
+        resolveCard(c.dataset.card, `${T.fmtDate(r.date)}${r.endDate ? ' ~ ' + T.fmtDate(r.endDate) : ''} ${r.start || '시간 미정'} 등록 완료`);
+        say(`${qj(r.title, '을/를')} ${esc(T.relLabel(r.date))}${r.endDate ? ' ~ ' + esc(T.fmtDate(r.endDate)) : ''}${r.start ? ' ' + esc(T.timeK(r.start)) : ''}에 등록했어요.`);
       },
       cancel: c => resolveCard(c.dataset.card, '취소했어요')
     });
@@ -252,7 +252,7 @@
   function addFlow(t) {
     const many = N.parseMany(t);
     if (many.length > 1) {
-      say(`일정 ${many.length}개를 찾았어요.${bullet(many.map((p, i) => `${i + 1}. ${esc(T.fmtDate(p.date))} ${esc(p.title)}${p.start ? ' · ' + esc(p.start) : ''}`))}각각 확인한 뒤 등록해 주세요.`);
+      say(`일정 ${many.length}개를 찾았어요.${bullet(many.map((p, i) => `${i + 1}. ${esc(T.fmtDate(p.date))}${p.endDate ? ' ~ ' + esc(T.fmtDate(p.endDate)) : ''} ${esc(p.title)}${p.start ? ' · ' + esc(p.start) : ''}`))}각각 확인한 뒤 등록해 주세요.`);
       many.forEach((p, i) => say(draftCard(p, `${i + 1}번 일정`)));
       return;
     }
@@ -321,7 +321,7 @@
       }));
   }
   function pickList(occs) {
-    return `<div class="pick-list">${occs.map((o, i) => `<label class="pick"><input type="checkbox" data-pick="${i}" checked><span>${U.catDot(o.category)}<b>${esc(T.fmtDate(o.occDate))} ${esc(o.start || '미정')}</b> ${esc(o.title)}${o.isRepeat ? ' <span class="muted">(반복)</span>' : ''}</span></label>`).join('')}</div>`;
+    return `<div class="pick-list">${occs.map((o, i) => `<label class="pick"><input type="checkbox" data-pick="${i}" checked><span>${U.catDot(o.category)}<b>${esc(T.fmtDate(o.occDate))} ${esc(o.start || '미정')}</b> ${esc(o.title)}${o.isMulti ? ` <span class="muted">(${o.dayIndex}/${o.dayTotal}일째)</span>` : o.isRepeat ? ' <span class="muted">(반복)</span>' : ''}</span></label>`).join('')}</div>`;
   }
   const picked = (c, occs) => [...c.querySelectorAll('[data-pick]')].filter(i => i.checked).map(i => occs[+i.dataset.pick]);
 
@@ -329,7 +329,7 @@
   function deleteFlow(t) {
     const { occs } = matchOccs(t, T.now().date);
     if (!occs.length) return say('삭제할 일정을 찾지 못했어요. 날짜나 일정 이름을 함께 말씀해 주세요.');
-    say(`다음 일정을 삭제할까요? 삭제할 것만 체크해 주세요.${occs.some(o => o.isRepeat) ? ' 반복 일정은 해당 날짜만 삭제돼요.' : ''}` +
+    say(`다음 일정을 삭제할까요? 삭제할 것만 체크해 주세요.${occs.some(o => o.isRepeat) ? ' 반복·여러 날 일정은 해당 날짜만 삭제돼요.' : ''}` +
       card(`${pickList(occs)}<div class="card-actions"><button class="btn ghost" data-act="cancel">취소</button><button class="btn danger" data-act="ok">삭제</button></div>`, {
         ok: async c => {
           const sel = picked(c, occs);
@@ -480,12 +480,12 @@
       if (!found.length) return say('일정을 찾지 못했어요. 날짜와 함께 다시 말씀해 주세요. 없으면 “없어”라고 해 주세요.');
       const saved = [];
       for (const p of found) {
-        const ev = await S.add({ title: p.title, date: p.date, start: p.start, end: p.end, location: p.location, category: p.category, priority: p.priority, repeat: p.repeat, reminders: p.reminders || (p.start ? [S.settings.defaultReminder] : []), people: p.people });
+        const ev = await S.add({ title: p.title, date: p.date, endDate: p.endDate, start: p.start, end: p.end, location: p.location, category: p.category, priority: p.priority, repeat: p.repeat, reminders: p.reminders || (p.start ? [S.settings.defaultReminder] : []), people: p.people });
         saved.push(ev);
       }
       evening.newOnes = saved;
       const noTime = saved.filter(e => !e.start);
-      const listTxt = bullet(saved.map((e, i) => `${i + 1}. ${esc(T.fmtDate(e.date))} ${esc(e.title)}${e.start ? ' · ' + esc(T.timeK(e.start)) : ' · <span class="muted">시간 미정</span>'}`));
+      const listTxt = bullet(saved.map((e, i) => `${i + 1}. ${esc(T.fmtDate(e.date))}${e.endDate ? ' ~ ' + esc(T.fmtDate(e.endDate)) : ''} ${esc(e.title)}${e.start ? ' · ' + esc(T.timeK(e.start)) : ' · <span class="muted">시간 미정</span>'}`));
       const undoIds = saved.map(e => e.id);
       const undo = card(`<div class="card-actions"><button class="btn ghost" data-act="undo">방금 저장한 일정 되돌리기</button></div>`, {
         undo: async c => { for (const id of undoIds) await S.remove(id); resolveCard(c.dataset.card, '저장을 취소했어요'); evening.newOnes = []; evening.step = 'new'; say('저장을 취소했어요. 다시 말씀해 주세요.'); }

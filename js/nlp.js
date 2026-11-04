@@ -198,7 +198,7 @@
     const text = String(input || '').replace(/\s+/g, ' ').trim();
     let work = text;
     const r = {
-      raw: text, title: '', date: null, start: null, end: null, location: '', description: '',
+      raw: text, title: '', date: null, endDate: null, start: null, end: null, location: '', description: '',
       category: '기타', priority: 'normal', repeat: { freq: 'none' }, reminders: null, people: [],
       assumptions: [], missing: []
     };
@@ -238,14 +238,49 @@
       }
     }
 
-    // 3) 날짜
-    const dates = findDates(work, today, { future: opts.future !== false });
+    // 3) 날짜 — 여러 날 일정도 함께 본다: "12월 1일부터 12월 9일까지", "12/1~12/9", "월요일부터 수요일까지", "3박 4일", "5일 동안"
+    const future = opts.future !== false;
+    let spanDays = null;
+    if ((m = /(\d+)\s*박\s*(\d+)\s*일/.exec(work))) { spanDays = +m[2]; work = mask(work, m.index, m[0].length); }
+    else if ((m = /(\d+)\s*일\s*(?:동안|간)/.exec(work))) { spanDays = +m[1]; work = mask(work, m.index, m[0].length); }
+
+    const RANGE_MD = /(?:(\d{1,2})\s*월\s*(\d{1,2})\s*일|(\d{1,2})\/(\d{1,2}))\s*(?:부터|~|–|-|에서)\s*(?:(\d{1,2})\s*월\s*(\d{1,2})\s*일|(\d{1,2})\/(\d{1,2})|(\d{1,2})\s*일)\s*(?:까지)?/;
+    if ((m = RANGE_MD.exec(work)) && r.repeat.freq === 'none') {
+      const sm = +(m[1] || m[3]), sd = +(m[2] || m[4]);
+      const s = monthDay(today, sm, sd, null, { future });
+      const em = m[5] || m[7] ? +(m[5] || m[7]) : sm, ed = +(m[6] || m[8] || m[9]);
+      if (s && ed >= 1 && ed <= 31) {
+        const y = T.ymd(s.date).y;
+        let e = ed <= T.daysInMonth(y, em) ? T.make(y, em, ed) : null;
+        if (e && e < s.date) e = m[5] || m[7] ? T.make(y + 1, em, ed) : T.addMonths(e, 1);
+        if (e) {
+          r.date = s.date; r.endDate = e;
+          if (s.assume) r.assumptions.push(s.assume);
+          work = mask(work, m.index, m[0].length);
+        }
+      }
+    }
+    const dates = findDates(work, today, { future });
     if (dates.found.length) {
       const first = dates.found[0];
       if (!r.date) r.date = first.date;
       if (first.assume) r.assumptions.push(first.assume);
+      const second = dates.found[1];
+      const between = second ? work.slice(first.index + first.len, second.index) : '';
+      if (!r.endDate && second && r.repeat.freq === 'none' && /^\s*(?:부터|~|–|-|에서)\s*$/.test(between)) {
+        let e = second.date;
+        for (let i = 0; e < r.date && i < 12; i++) e = T.diff(e, r.date) < 7 ? T.addDays(e, 7) : T.addMonths(e, 1);
+        r.endDate = e;
+        work = mask(work, first.index + first.len, second.index - first.index - first.len);
+        const tail = /^\s*까지/.exec(work.slice(second.index + second.len));
+        if (tail) work = mask(work, second.index + second.len, tail[0].length);
+      }
     }
-    work = dates.rest;
+    work = dates.rest.split('').map((c, i) => (work[i] === ' ' ? ' ' : c)).join('');
+    if (!r.endDate && spanDays > 1 && r.date) r.endDate = T.addDays(r.date, spanDays - 1);
+    if (r.endDate && (r.endDate <= r.date || T.diff(r.date, r.endDate) > 366)) r.endDate = null;
+    // "매일 … 5일 동안"처럼 반복과 기간이 함께 오면 반복 종료일로 쓴다
+    if (r.endDate && r.repeat.freq !== 'none') { r.repeat.until = r.endDate; r.endDate = null; }
 
     // 4) 기간: "2시간 동안"
     let duration = null;

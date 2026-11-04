@@ -160,7 +160,7 @@
     const plan = [];
     if (a.first) plan.push(`가장 먼저 ${when(a.first)} ‘${a.first.title}’ 준비부터 시작하세요.`);
     const bigFree = a.free.slice().sort((x, y) => y.len - x.len)[0];
-    a.untimed.filter(o => !o.done).forEach((o, i) => {
+    a.untimed.filter(o => !o.done && !o.isMulti).forEach((o, i) => {
       const slot = a.free[i] || bigFree;
       const topic = josa(o.title, '은/는').slice(o.title.length);
       if (slot) plan.push(`시간이 정해지지 않은 ‘${o.title}’${topic} ‘${slot.after.title}’ 이후${slot.evening ? ' 저녁 시간' : `(${T.fromMin(slot.from)}~)`}에 하면 좋겠어요.`);

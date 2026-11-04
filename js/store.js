@@ -43,6 +43,8 @@
     e.category = CATEGORIES.includes(e.category) ? e.category : '기타';
     const rp = e.repeat && typeof e.repeat === 'object' ? e.repeat : { freq: e.repeat || 'none' };
     e.repeat = { freq: REPEAT[rp.freq] ? rp.freq : 'none', until: T.isDate(rp.until) ? rp.until : null };
+    // 여러 날 일정: date ~ endDate (반복 일정과 함께 쓰지 않는다, 최대 1년)
+    e.endDate = e.repeat.freq === 'none' && T.isDate(e.endDate) && e.endDate > e.date && T.diff(e.date, e.endDate) <= 366 ? e.endDate : null;
     e.reminders = Array.isArray(e.reminders)
       ? [...new Set(e.reminders.map(Number).filter(n => Number.isFinite(n) && n >= 0 && n <= 10080))].sort((a, b) => a - b)
       : [];
@@ -134,13 +136,16 @@
   function get(id) { return state.events.get(id) || null; }
   function all() { return [...state.events.values()]; }
 
-  // ───────── 반복 일정 펼치기 ─────────
+  // ───────── 반복·여러 날 일정 펼치기 ─────────
+  /** 날짜별로 따로 완료·삭제되는 일정(반복 또는 여러 날) */
+  function isSeries(ev) { return ev.repeat.freq !== 'none' || !!ev.endDate; }
+  function lastDate(ev) { return ev.endDate || (ev.repeat.freq === 'none' ? ev.date : ev.repeat.until); }
   function occursOn(ev, date) {
     if (date < ev.date) return false;
     if (ev.repeat.until && date > ev.repeat.until) return false;
     if (ev.skip.includes(date)) return false;
     switch (ev.repeat.freq) {
-      case 'none': return date === ev.date;
+      case 'none': return date === ev.date || (!!ev.endDate && date <= ev.endDate);
       case 'daily': return true;
       case 'weekdays': { const d = T.dow(date); return d >= 1 && d <= 5; }
       case 'weekly': return T.dow(date) === T.dow(ev.date);
@@ -152,8 +157,11 @@
     return Object.assign({}, ev, {
       occDate: date,
       key: ev.id + '@' + date,
-      isRepeat: ev.repeat.freq !== 'none',
-      done: ev.repeat.freq === 'none' ? ev.done : !!ev.completions[date]
+      isRepeat: isSeries(ev),
+      isMulti: !!ev.endDate,
+      dayIndex: ev.endDate ? T.diff(ev.date, date) + 1 : null,
+      dayTotal: ev.endDate ? T.diff(ev.date, ev.endDate) + 1 : null,
+      done: isSeries(ev) ? !!ev.completions[date] : ev.done
     });
   }
   function sortOcc(a, b) {
@@ -166,12 +174,13 @@
   function occurrences(from, to) {
     const out = [];
     for (const ev of state.events.values()) {
-      if (ev.repeat.freq === 'none') {
+      if (!isSeries(ev)) {
         if (ev.date >= from && ev.date <= to) out.push(toOcc(ev, ev.date));
         continue;
       }
       const start = ev.date > from ? ev.date : from;
-      const end = ev.repeat.until && ev.repeat.until < to ? ev.repeat.until : to;
+      const last = lastDate(ev);
+      const end = last && last < to ? last : to;
       for (let d = start; d <= end; d = T.addDays(d, 1)) if (occursOn(ev, d)) out.push(toOcc(ev, d));
     }
     return out.sort(sortOcc);
@@ -182,12 +191,12 @@
   async function setDone(occ, done) {
     const ev = get(occ.id);
     if (!ev) return;
-    if (ev.repeat.freq === 'none') return update(ev.id, { done, pendingDecision: false });
+    if (!isSeries(ev)) return update(ev.id, { done, pendingDecision: false });
     const completions = Object.assign({}, ev.completions);
     if (done) completions[occ.occDate] = true; else delete completions[occ.occDate];
     return update(ev.id, { completions });
   }
-  /** 일정 하나를 다른 날짜(·시간)로 옮긴다. 반복 일정은 그날만 빼고 단일 일정으로 복사한다. */
+  /** 일정 하나를 다른 날짜(·시간)로 옮긴다. 반복·여러 날 일정은 그날만 빼고 단일 일정으로 복사한다. */
   async function moveOcc(occ, date, start) {
     const ev = get(occ.id);
     if (!ev) return null;
@@ -197,9 +206,9 @@
       times = { start, end: start && dur ? T.fromMin(T.toMin(start) + dur) : (start ? null : null) };
       if (!start) times.end = null;
     }
-    if (ev.repeat.freq === 'none') return update(ev.id, Object.assign({ date, done: false, pendingDecision: false }, times));
+    if (!isSeries(ev)) return update(ev.id, Object.assign({ date, done: false, pendingDecision: false }, times));
     await update(ev.id, { skip: ev.skip.concat(occ.occDate) });
-    const copy = Object.assign({}, ev, { date, repeat: { freq: 'none' }, done: false, completions: {}, skip: [], seriesId: ev.id }, times);
+    const copy = Object.assign({}, ev, { date, endDate: null, repeat: { freq: 'none' }, done: false, completions: {}, skip: [], seriesId: ev.id }, times);
     delete copy.id;
     return add(copy);
   }
@@ -218,7 +227,10 @@
   function conflicts(cand, excludeId) {
     if (!cand.start || !T.isDate(cand.date)) return [];
     const [s, e] = span(cand);
-    return on(cand.date).filter(o => {
+    // 여러 날 일정은 매일 같은 시간에 열리는 것으로 보고 모든 날을 확인한다 (최대 31일)
+    const last = T.isDate(cand.endDate) && cand.endDate > cand.date ? cand.endDate : cand.date;
+    const to = T.diff(cand.date, last) > 30 ? T.addDays(cand.date, 30) : last;
+    return occurrences(cand.date, to).filter(o => {
       if (o.id === excludeId || !o.start) return false;
       const [os, oe] = span(o);
       return s < oe && os < e;
@@ -259,7 +271,7 @@
     return all().filter(ev => {
       if (opts.category && ev.category !== opts.category) return false;
       if (opts.scope === 'past' && ev.date >= today && ev.repeat.freq === 'none') return false;
-      if (opts.scope === 'future' && ev.date < today && ev.repeat.freq === 'none') return false;
+      if (opts.scope === 'future' && (ev.endDate || ev.date) < today && ev.repeat.freq === 'none') return false;
       if (opts.status === 'done' && !ev.done) return false;
       if (opts.status === 'open' && ev.done) return false;
       if (!words.length) return true;
@@ -330,8 +342,9 @@
         lines.push(`DTSTART;TZID=Asia/Seoul:${dt(e.date, e.start)}`);
         lines.push(`DTEND;TZID=Asia/Seoul:${dt(e.date, e.end || T.fromMin(T.toMin(e.start) + 60))}`);
       } else {
-        lines.push('DTSTART;VALUE=DATE:' + dt(e.date), 'DTEND;VALUE=DATE:' + dt(T.addDays(e.date, 1)));
+        lines.push('DTSTART;VALUE=DATE:' + dt(e.date), 'DTEND;VALUE=DATE:' + dt(T.addDays(e.endDate || e.date, 1)));
       }
+      if (e.endDate && e.start) lines.push('RRULE:FREQ=DAILY;UNTIL=' + dt(e.endDate) + 'T235959');
       if (e.repeat.freq !== 'none') lines.push('RRULE:' + rr[e.repeat.freq] + (e.repeat.until ? ';UNTIL=' + dt(e.repeat.until) + 'T235959' : ''));
       if (e.location) lines.push('LOCATION:' + esc(e.location));
       if (e.description) lines.push('DESCRIPTION:' + esc(e.description));
@@ -347,7 +360,7 @@
     get ready() { return state.ready; },
     init, onChange: fn => { listeners.add(fn); return () => listeners.delete(fn); },
     getKV, setKV, saveSettings,
-    add, update, remove, restore, get, all, normalize,
+    add, update, remove, restore, get, all, normalize, isSeries,
     occurrences, on, setDone, moveOcc, skipOcc,
     conflicts, duplicates, freeSlot, gapsOn, span, search,
     listBackups, restoreBackup, exportData, importData, wipe, toICS

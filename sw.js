@@ -1,6 +1,6 @@
 /* DAYFLOW 서비스 워커 — 오프라인 실행과 알림 클릭 처리
  * 네트워크 우선, 실패하면 캐시. (업데이트가 바로 반영되도록) */
-const CACHE = 'dayflow-v1';
+const CACHE = 'dayflow-v2';
 const ASSETS = ['./', 'index.html', 'css/style.css', 'icon.svg', 'manifest.webmanifest',
   'js/time.js', 'js/db.js', 'js/store.js', 'js/nlp.js', 'js/weather.js', 'js/brief.js', 'js/ui.js', 'js/notify.js', 'js/chat.js', 'js/app.js'];
 

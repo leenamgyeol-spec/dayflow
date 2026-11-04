@@ -114,6 +114,7 @@
   function metaLine(o, showDate) {
     const parts = [];
     if (showDate) parts.push(esc(T.relLabel(o.occDate || o.date)));
+    if (o.endDate) parts.push(`${icon('calendar', 13)}${esc(T.fmtDate(o.date, false))}~${esc(T.fmtDate(o.endDate, false))}${o.dayIndex ? ` · ${o.dayIndex}/${o.dayTotal}일째` : ''}`);
     if (o.location) parts.push(`${icon('pin', 13)}${esc(o.location)}`);
     if (o.repeat && o.repeat.freq !== 'none') parts.push(`${icon('repeat', 13)}${S.REPEAT[o.repeat.freq]}`);
     if (o.reminders && o.reminders.length) parts.push(`${icon('bell', 13)}${o.reminders.map(m => (m ? T.durK(m) + ' 전' : '정시')).join(', ')}`);
@@ -139,8 +140,9 @@
     const custom = rem.filter(m => !REMINDER_OPTS.some(([v]) => v === m));
     return `<div class="form" data-form>
       <label class="field full"><span>일정 제목</span><input name="title" required maxlength="120" value="${esc(d.title)}" placeholder="예: 수학 학원"></label>
-      <label class="field"><span>날짜</span><input type="date" name="date" required value="${esc(d.date || '')}"></label>
-      <div class="field two"><label><span>시작</span><input type="time" name="start" value="${esc(d.start || '')}"></label><label><span>종료</span><input type="time" name="end" value="${esc(d.end || '')}"></label></div>
+      <label class="field"><span>날짜 (시작일)</span><input type="date" name="date" required value="${esc(d.date || '')}"></label>
+      <label class="field"><span>끝나는 날 <em class="muted">여러 날 일정일 때</em></span><input type="date" name="endDate" value="${esc(d.endDate || '')}" min="${esc(d.date || '')}"></label>
+      <div class="field two full"><label><span>시작</span><input type="time" name="start" value="${esc(d.start || '')}"></label><label><span>종료</span><input type="time" name="end" value="${esc(d.end || '')}"></label></div>
       <label class="field full"><span>장소</span><input name="location" maxlength="120" value="${esc(d.location)}" placeholder="선택"></label>
       <label class="field"><span>카테고리</span><select name="category">${S.CATEGORIES.map(c => `<option ${c === d.category ? 'selected' : ''}>${c}</option>`).join('')}</select></label>
       <label class="field"><span>중요도</span><select name="priority">${Object.entries(S.PRIORITY).map(([k, v]) => `<option value="${k}" ${k === d.priority ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -162,7 +164,7 @@
     if (custom > 0) reminders.push(custom);
     const doneEl = f.querySelector('[name="done"]');
     const out = {
-      title: v('title'), date: v('date'), start: v('start') || null, end: v('end') || null, location: v('location'),
+      title: v('title'), date: v('date'), endDate: v('endDate') && v('endDate') !== v('date') ? v('endDate') : null, start: v('start') || null, end: v('end') || null, location: v('location'),
       category: v('category'), priority: v('priority'), repeat: { freq: v('repeat'), until: v('until') || null }, reminders
     };
     const desc = f.querySelector('[name="description"]');
@@ -176,6 +178,10 @@
     if (d.end && !d.start) return '종료 시간만 있을 수는 없어요. 시작 시간을 입력해 주세요.';
     if (d.start && d.end && T.toMin(d.end) <= T.toMin(d.start)) return '종료 시간이 시작 시간보다 늦어야 해요.';
     if (d.repeat && d.repeat.until && d.repeat.until < d.date) return '반복 종료일이 시작 날짜보다 빨라요.';
+    if (d.endDate && !T.isDate(d.endDate)) return '끝나는 날을 확인해 주세요.';
+    if (d.endDate && d.endDate < d.date) return '끝나는 날이 시작일보다 빨라요.';
+    if (d.endDate && T.diff(d.date, d.endDate) > 366) return '여러 날 일정은 1년까지만 만들 수 있어요.';
+    if (d.endDate && d.repeat && d.repeat.freq !== 'none') return '여러 날 일정은 반복으로 설정할 수 없어요. 반복을 끄거나 끝나는 날을 비워 주세요.';
     return null;
   }
 
@@ -220,10 +226,11 @@
   function openEvent(occ, preset) {
     const ev = occ ? S.get(occ.id) : null;
     const data = ev ? Object.assign({}, ev, { done: occ.done }) : Object.assign({ reminders: [S.settings.defaultReminder].filter(x => x != null && x !== '' && x >= 0) }, preset);
-    const isRepeat = ev && ev.repeat.freq !== 'none';
+    const isRepeat = ev && S.isSeries(ev);
+    const kind = ev && ev.endDate ? '여러 날 일정' : '반복 일정';
     const m = modal(`
       <div class="modal-head"><h2>${ev ? '일정 수정' : '새 일정'}</h2><button class="icon-btn" data-close aria-label="닫기">${icon('x')}</button></div>
-      <div class="modal-body">${isRepeat ? `<p class="note">${icon('repeat', 14)} 반복 일정이에요. 수정하면 모든 반복에 적용되고, 완료 체크는 ${esc(T.fmtDate(occ.occDate))}에만 적용돼요.</p>` : ''}${formHtml(data, { showDone: !!ev })}</div>
+      <div class="modal-body">${isRepeat ? `<p class="note">${icon('repeat', 14)} ${kind}이에요. 수정하면 모든 날에 적용되고, 완료 체크는 ${esc(T.fmtDate(occ.occDate))}에만 적용돼요.</p>` : ''}${formHtml(data, { showDone: !!ev })}</div>
       <div class="modal-foot">
         ${ev ? `<button class="btn ghost danger-text" data-del>${icon('trash', 16)} 삭제</button>` : ''}
         <span class="grow"></span>
@@ -248,9 +255,10 @@
   async function deleteOcc(occ) {
     const ev = S.get(occ.id);
     if (!ev) return;
-    if (ev.repeat.freq !== 'none') {
-      const v = await choose('반복 일정 삭제', `<p>‘${esc(ev.title)}’는 반복 일정이에요. 어떻게 삭제할까요?</p>`,
-        [{ id: 'cancel', label: '취소', kind: 'ghost' }, { id: 'one', label: `${T.fmtDate(occ.occDate)}만 삭제` }, { id: 'all', label: '모든 반복 삭제', kind: 'danger' }]);
+    if (S.isSeries(ev)) {
+      const kind = ev.endDate ? '여러 날 일정' : '반복 일정';
+      const v = await choose(`${kind} 삭제`, `<p>‘${esc(ev.title)}’${DF.nlp.josa(ev.title, '은/는').slice(ev.title.length)} ${kind}이에요. 어떻게 삭제할까요?</p>`,
+        [{ id: 'cancel', label: '취소', kind: 'ghost' }, { id: 'one', label: `${T.fmtDate(occ.occDate)}만 삭제` }, { id: 'all', label: ev.endDate ? '전체 기간 삭제' : '모든 반복 삭제', kind: 'danger' }]);
       if (v === 'one') {
         const before = Object.assign({}, ev);
         await S.skipOcc(occ);
