@@ -1,0 +1,12 @@
+{
+  "name": "DAYFLOW",
+  "short_name": "DAYFLOW",
+  "description": "당신의 하루를 기억하고, 더 나은 하루를 설계합니다.",
+  "lang": "ko",
+  "start_url": "./#/today",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f7f8",
+  "theme_color": "#f7f7f8",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
