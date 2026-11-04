@@ -1,6 +1,6 @@
 /* DAYFLOW 서비스 워커 — 오프라인 실행과 알림 클릭 처리
  * 네트워크 우선, 실패하면 캐시. (업데이트가 바로 반영되도록) */
-const CACHE = 'dayflow-v3';
+const CACHE = 'dayflow-v4';
 const ASSETS = ['./', 'index.html', 'css/style.css', 'icon.svg', 'manifest.webmanifest',
   'js/time.js', 'js/db.js', 'js/store.js', 'js/nlp.js', 'js/weather.js', 'js/brief.js', 'js/ui.js', 'js/notify.js', 'js/chat.js', 'js/app.js'];
 
@@ -14,7 +14,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then(res => {
+    fetch(e.request, { cache: 'no-cache' }).then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy));
       return res;
