@@ -575,6 +575,7 @@
     h += '<p>오늘도 수고 많았어요. 푹 쉬세요.</p>';
     say(h);
     await S.setKV('eveningDone:' + evening.date, true);
+    if (DF.push) DF.push.sync(); // 오늘 저녁 마감 알림은 더 보내지 않는다
     evening.step = 'done';
     evening.waiting = false;
   }

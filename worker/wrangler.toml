@@ -1,0 +1,19 @@
+name = "dayflow-push"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# 매분 시각이 된 알림을 보낸다
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+ALLOWED_ORIGINS = "https://leenamgyeol-spec.github.io,http://localhost:5530"
+VAPID_SUBJECT = "https://leenamgyeol-spec.github.io/dayflow/"
+VAPID_PUBLIC = "BLLCxyqNBVOyKb5q1orQaRDYtnhGjzyRWbitKH-tVLAH-lbKt0FlektLmMd0hjNJPzgnyQ4hTCA9X6YwqAcwgMQ"
+
+# 기기별 구독과 알림 목록
+[[kv_namespaces]]
+binding = "PUSH"
+id = "ca85c45fd4f84482a796e3d18971fecd"
+
+# 비밀값(VAPID_PRIVATE)은 `wrangler secret put`으로만 넣는다.

@@ -23,6 +23,9 @@
     if (!inbox.some(x => x.tag === tag)) inbox.unshift({ title, body, tag, at: Date.now(), important: !!opts.important });
     inbox.splice(30);
     let system = false;
+    // 푸시 서버가 같은 알림을 보내므로, 예약 알림은 앱 안에서만 보여 준다 (중복 방지)
+    const viaPush = opts.scheduled && DF.push && DF.push.active;
+    if (viaPush) { if (document.visibilityState === 'visible') DF.ui && DF.ui.toast(`<b>${DF.ui.esc(title)}</b><br>${DF.ui.esc(body)}`, { important: opts.important }); if (handlers.inbox) handlers.inbox(inbox); return; }
     if (supported && Notification.permission === 'granted') {
       try {
         const o = { body, tag, icon: 'icon.svg', badge: 'icon.svg', requireInteraction: !!opts.important, data: { url: opts.url || '#/today' } };
@@ -60,7 +63,7 @@
           if (sent[key] || nowTs < fireTs || nowTs > startTs + 5 * 6e4) continue;
           sent[key] = nowTs; changed = true;
           const lead = min === 0 ? '지금 시작해요' : `${T.durK(min)} 뒤 시작`;
-          await show(`${o.priority === 'high' ? '[중요] ' : ''}${o.title}`, `${T.timeK(o.start)} · ${lead}${o.location ? ' · ' + o.location : ''}`, { tag: key, important: o.priority === 'high' });
+          await show(`${o.priority === 'high' ? '[중요] ' : ''}${o.title}`, `${T.timeK(o.start)} · ${lead}${o.location ? ' · ' + o.location : ''}`, { tag: key, important: o.priority === 'high', scheduled: true });
         }
       }
 
@@ -73,7 +76,7 @@
           sent[mKey] = nowTs; changed = true;
           const w = await DF.weather.get().catch(() => null);
           const b = DF.brief.morning(n.date, w);
-          await show('오늘의 브리핑', b.empty ? b.summary : `${b.summary} ${b.important && b.important[0] ? '가장 중요한 일정: ' + b.important[0].o.title : ''}`, { tag: mKey });
+          await show('오늘의 브리핑', b.empty ? b.summary : `${b.summary} ${b.important && b.important[0] ? '가장 중요한 일정: ' + b.important[0].o.title : ''}`, { tag: mKey, scheduled: true });
           if (handlers.morning) handlers.morning(b);
         }
         // 3) 저녁 마감
@@ -81,7 +84,7 @@
           sent[eKey] = nowTs; changed = true;
           const done = await S.getKV('eveningDone:' + n.date, false);
           if (!done) {
-            await show('하루 마감 시간이에요', '오늘 하루를 정리하고 새 일정을 확인해 볼까요?', { tag: eKey, url: '#/assistant?evening=1' });
+            await show('하루 마감 시간이에요', '오늘 하루를 정리하고 새 일정을 확인해 볼까요?', { tag: eKey, url: '#/assistant?evening=1', scheduled: true });
             if (handlers.evening) handlers.evening();
           }
         }

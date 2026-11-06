@@ -363,6 +363,15 @@
     const st = S.settings;
     const perm = DF.notify.permission();
     const backups = await S.listBackups();
+    const ps = await DF.push.status();
+    const pushHtml = ps.permission === 'granted' && ps.supported
+      ? `<p class="small ok-text">${icon('check', 14)} <b>켜짐</b> — 앱을 닫아도 정해진 시각에 알림이 와요.${ps.lastSync ? ` <span class="muted">(${ps.lastCount || 0}개 예약 · ${esc(new Date(ps.lastSync).toLocaleString('ko-KR', { timeZone: T.TZ, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }))} 동기화)</span>` : ''}</p>
+         ${ps.lastError ? `<p class="small warn-text">마지막 동기화 실패: ${esc(ps.lastError)} — 인터넷 연결을 확인해 주세요.</p>` : ''}
+         <div class="row-gap wrap"><button class="btn sm" data-push-test>${icon('bell', 15)} 닫힌 상태 알림 테스트</button></div>`
+      : ps.ios && !ps.standalone ? '<p class="small warn-text">iPhone에서는 Safari 공유 버튼 → “홈 화면에 추가”로 설치한 DAYFLOW 앱에서 알림을 받을 수 있어요.</p>'
+      : !ps.supported ? '<p class="small warn-text">이 브라우저는 백그라운드 알림을 지원하지 않아요.</p>'
+      : ps.permission === 'denied' ? '<p class="small warn-text">알림이 차단되어 있어요. 기기 설정에서 DAYFLOW 알림을 허용해 주세요.</p>'
+      : `<p class="small">알림을 허용하면 바로 켜져요.</p><div class="row-gap wrap"><button class="btn sm primary" data-perm>${icon('bell', 15)} 알림 허용하기</button></div>`;
     const permText = { granted: '허용됨', denied: '차단됨 (브라우저 설정에서 허용해 주세요)', default: '아직 묻지 않음', unsupported: '이 환경은 시스템 알림을 지원하지 않아 앱 안 알림으로 보여 드려요' }[perm];
     view().innerHTML = `${header('설정')}
       <div class="grid-2">
@@ -376,10 +385,13 @@
           <div class="field two"><label><span>아침 브리핑</span><input type="time" id="s-morning" value="${esc(st.morningTime)}"></label><label><span>저녁 마감</span><input type="time" id="s-evening" value="${esc(st.eveningTime)}"></label></div>
           <label class="field full"><span>기본 알림 (새 일정)</span><select id="s-rem">${[['', '없음'], [0, '정시'], [10, '10분 전'], [30, '30분 전'], [60, '1시간 전']].map(([v, l]) => `<option value="${v}" ${String(st.defaultReminder) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           <p class="small">브라우저 알림: <b>${esc(permText)}</b></p>
-          <div class="row-gap">${perm === 'default' ? `<button class="btn sm primary" data-perm>${icon('bell', 15)} 알림 허용하기</button>` : ''}<button class="btn sm" data-test>${icon('bell', 15)} 테스트 알림</button></div>
-          <p class="muted small">자동 실행은 DAYFLOW가 브라우저에 열려 있을 때(탭이 뒤에 있어도) 동작해요. 앱을 늦게 열면 놓친 브리핑을 한 번 보여 드려요.</p>
+          <div class="row-gap"><button class="btn sm" data-test>${icon('bell', 15)} 테스트 알림</button></div>
         </section>
       </div>
+      <section class="card"><div class="section-head"><h2>앱을 닫아도 오는 알림</h2></div>
+        <p class="small">일정 알림, 아침 브리핑, 저녁 마감을 앱이 꺼져 있어도 정해진 시각에 보내 드려요. 앞으로 30일치 알림 문구(일정 제목·시간·장소)만 알림 서버에 올라가고, 일정이 바뀌면 자동으로 다시 맞춰요.</p>
+        ${pushHtml}
+      </section>
       <section class="card"><div class="section-head"><h2>데이터</h2><span class="muted small">${S.all().length}개 일정 · ${DF.db.usingFallback ? 'localStorage' : 'IndexedDB'}에 저장 중</span></div>
         <p class="small">모든 데이터는 이 기기의 브라우저 저장소에 영구 저장돼요. 새로고침하거나 브라우저를 껐다 켜도 그대로 남아요. 다른 기기로 옮기거나 혹시 모를 상황에 대비해 가끔 백업 파일을 내려받아 두세요.</p>
         <div class="row-gap wrap">
@@ -403,8 +415,17 @@
     $('#s-morning').addEventListener('change', e => { if (T.isTime(e.target.value)) saveField({ morningTime: e.target.value }); });
     $('#s-evening').addEventListener('change', e => { if (T.isTime(e.target.value)) saveField({ eveningTime: e.target.value }); });
     $('#s-rem').addEventListener('change', e => saveField({ defaultReminder: e.target.value === '' ? null : +e.target.value }));
-    const perm2 = $('[data-perm]');
-    if (perm2) perm2.addEventListener('click', async () => { await DF.notify.request(); renderSettings(); });
+    const pushBtn = async (sel, fn, done) => {
+      const b = $(sel);
+      if (!b) return;
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try { await fn(); U.toast(done); } catch (e) { U.toast(esc(e.message), { important: true, duration: 9000 }); }
+        renderSettings();
+      });
+    };
+    pushBtn('[data-perm]', () => DF.push.enable(), '알림을 켰어요. 앱을 닫아도 정해진 시각에 알려 드릴게요.');
+    pushBtn('[data-push-test]', async () => { const r = await DF.push.test(); if (!r.ok) throw new Error('알림 서버가 보내지 못했어요 (' + r.status + '). 끄고 다시 켜 보세요.'); }, '테스트 알림을 보냈어요. 잠시 뒤 도착해요.');
     $('[data-test]').addEventListener('click', () => DF.notify.show('DAYFLOW 테스트 알림', '알림이 잘 도착했어요.', { tag: 'test-' + Date.now() }));
     $('[data-export]').addEventListener('click', async () => {
       const data = await S.exportData();
@@ -490,7 +511,7 @@
       </div>
       <div class="modal-foot">${DF.notify.permission() === 'default' ? '<button class="btn ghost" data-perm>알림 허용</button>' : ''}<span class="grow"></span><button class="btn primary" data-start>시작하기</button></div>`);
     const perm = m.el.querySelector('[data-perm]');
-    if (perm) perm.addEventListener('click', async () => { const r = await DF.notify.request(); perm.textContent = r === 'granted' ? '알림 허용됨' : '알림 허용 안 됨'; perm.disabled = true; });
+    if (perm) perm.addEventListener('click', async () => { let ok = true; try { await DF.push.enable(); } catch (e) { ok = Notification.permission === 'granted'; } perm.textContent = ok ? '알림 허용됨' : '알림 허용 안 됨'; perm.disabled = true; });
     m.el.querySelector('[data-start]').addEventListener('click', async () => {
       await S.saveSettings({ name: m.el.querySelector('#ob-name').value.trim() });
       await S.setKV('onboarded', true);
@@ -509,6 +530,7 @@
     }
     applyTheme();
     await DF.chat.load();
+    await DF.push.init();
     S.onChange(() => refresh());
     S.onChange((type) => { if (type === 'settings') { applyTheme(); if (current === 'today') renderToday(true); } });
     window.addEventListener('hashchange', route);

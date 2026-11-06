@@ -1,8 +1,8 @@
 /* DAYFLOW 서비스 워커 — 오프라인 실행과 알림 클릭 처리
  * 네트워크 우선, 실패하면 캐시. (업데이트가 바로 반영되도록) */
-const CACHE = 'dayflow-v5';
-const ASSETS = ['./', 'index.html', 'css/style.css?v=5', 'icon.svg', 'manifest.webmanifest',
-  'js/time.js?v=5', 'js/db.js?v=5', 'js/store.js?v=5', 'js/nlp.js?v=5', 'js/weather.js?v=5', 'js/brief.js?v=5', 'js/ui.js?v=5', 'js/notify.js?v=5', 'js/chat.js?v=5', 'js/app.js?v=5'];
+const CACHE = 'dayflow-v7';
+const ASSETS = ['./', 'index.html', 'css/style.css?v=7', 'icon.svg', 'manifest.webmanifest',
+  'js/time.js?v=7', 'js/db.js?v=7', 'js/store.js?v=7', 'js/nlp.js?v=7', 'js/weather.js?v=7', 'js/brief.js?v=7', 'js/ui.js?v=7', 'js/notify.js?v=7', 'js/push.js?v=7', 'js/chat.js?v=7', 'js/app.js?v=7'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -20,6 +20,15 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(e.request).then(r => r || caches.match('index.html')))
   );
+});
+// 푸시 서버가 보낸 알림
+self.addEventListener('push', e => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch (err) { m = { title: 'DAYFLOW', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(m.title || 'DAYFLOW', {
+    body: m.body || '', tag: m.tag || undefined, icon: 'icon.svg', badge: 'icon.svg',
+    requireInteraction: !!m.important, data: { url: m.url || '#/today' }
+  }));
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close();
