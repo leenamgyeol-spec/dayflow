@@ -86,6 +86,8 @@
         }
       }
     }
+    // 알람: 울리는 시각부터 1분 간격으로 5번
+    if (DF.alarm) items.push(...DF.alarm.pushItems(DAYS));
     return items.sort((a, b) => a.at - b.at);
   }
 

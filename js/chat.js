@@ -548,15 +548,20 @@
     const future = cands.filter(c => c.at > Date.now() - 30e3).sort((a, b) => a.at - b.at);
     const pick = future[0] || cands.sort((a, b) => a.at - b.at)[0];
     const { date, start } = pick;
-    const title = p.title || (wake ? '기상' : '알림');
-    const ev = await S.add({ title, date, start, category: p.category, priority: 'high', repeat: p.repeat, reminders: [0], people: p.people, alarm: true });
-    const left = Math.max(0, Math.round((T.epoch(date, start) - Date.now()) / 6e4));
-    const when = `${T.relLabel(date).split(' · ')[0]} ${T.timeK(start)}`;
+    const label = p.title || (wake ? '기상' : '알람');
+    // 반복: 매일·평일·매주 ○요일 → 알람 반복 요일
+    const rp = p.repeat || { freq: 'none' };
+    const repDays = rp.freq === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : rp.freq === 'weekdays' ? [1, 2, 3, 4, 5] : rp.freq === 'weekly' ? (rp.days || [T.dow(date)]) : [];
+    const al = await DF.alarm.add({ time: start, label, days: repDays, date: repDays.length ? null : date });
+    const fire = DF.alarm.nextFire(al) || T.epoch(date, start);
+    const left = Math.max(0, Math.round((fire - Date.now()) / 6e4));
+    const fireDate = new Date(fire + 9 * 36e5).toISOString().slice(0, 10);
+    const when = `${T.relLabel(fireDate).split(' · ')[0]} ${T.timeK(start)}`;
     const leftTxt = left < 1 ? '곧' : left < 180 ? `${T.durK(left)} 뒤` : '';
-    say(`⏰ ${when}${leftTxt ? `(${leftTxt})` : ''}에 ${qj(title, '을/를')} 알람으로 알려 드릴게요.${p.repeat.freq !== 'none' ? ` (${esc(S.repeatLabel(p.repeat))} 반복)` : ''}` +
-      (DF.push && DF.push.active ? '' : '<br><span class="muted small">앱을 닫아도 받으려면 알림을 허용해 주세요. 지금은 앱이 열려 있을 때만 알려 드려요.</span>') +
+    say(`⏰ ${when}${leftTxt ? `(${leftTxt})` : ''}에 ${qj(label, '으로/로')} 알람을 맞췄어요.${repDays.length ? ` (${esc(DF.alarm.repeatText(al))} 반복)` : ''} <a href="#/alarm">알람 탭</a>에서 끄거나 바꿀 수 있어요.` +
+      (DF.push && DF.push.active ? '' : '<br><span class="muted small">앱이 꺼져 있을 때 울리려면 알림을 허용해 주세요.</span>') +
       card(`<div class="card-actions"><button class="btn ghost" data-act="undo">취소</button></div>`, {
-        undo: async c => { await S.remove(ev.id); resolveCard(c.dataset.card, '알람을 취소했어요'); }
+        undo: async c => { await DF.alarm.remove(al.id); resolveCard(c.dataset.card, '알람을 취소했어요'); }
       }));
   }
 

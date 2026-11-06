@@ -1,8 +1,8 @@
 /* DAYFLOW 서비스 워커 — 오프라인 실행과 알림 클릭 처리
  * 네트워크 우선, 실패하면 캐시. (업데이트가 바로 반영되도록) */
-const CACHE = 'dayflow-v13';
-const ASSETS = ['./', 'index.html', 'css/style.css?v=13', 'icon.svg', 'manifest.webmanifest',
-  'js/time.js?v=13', 'js/db.js?v=13', 'js/store.js?v=13', 'js/nlp.js?v=13', 'js/weather.js?v=13', 'js/brief.js?v=13', 'js/ui.js?v=13', 'js/notify.js?v=13', 'js/push.js?v=13', 'js/chat.js?v=13', 'js/app.js?v=13'];
+const CACHE = 'dayflow-v14';
+const ASSETS = ['./', 'index.html', 'css/style.css?v=14', 'icon.svg', 'manifest.webmanifest',
+  'js/time.js?v=14', 'js/db.js?v=14', 'js/store.js?v=14', 'js/nlp.js?v=14', 'js/weather.js?v=14', 'js/brief.js?v=14', 'js/ui.js?v=14', 'js/notify.js?v=14', 'js/alarm.js?v=14', 'js/push.js?v=14', 'js/chat.js?v=14', 'js/app.js?v=14'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

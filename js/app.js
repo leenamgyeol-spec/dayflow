@@ -5,7 +5,7 @@
   const { esc, icon } = U;
 
   const NAV = [
-    ['today', '오늘', 'home'], ['calendar', '캘린더', 'calendar'], ['assistant', 'AI 비서', 'chat'],
+    ['today', '오늘', 'home'], ['calendar', '캘린더', 'calendar'], ['alarm', '알람', 'clock'], ['assistant', 'AI 비서', 'chat'],
     ['stats', '통계', 'chart'], ['settings', '설정', 'settings']
   ];
   const view = () => document.getElementById('view');
@@ -305,6 +305,95 @@
     view().querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => quickAdd(b.dataset.add)));
   }
 
+  // ───────── 알람 (아이폰 시계 앱처럼) ─────────
+  function ampm(time) {
+    const [h, m] = time.split(':').map(Number);
+    return { ap: h < 12 ? '오전' : '오후', hm: `${h % 12 || 12}:${T.pad(m)}` };
+  }
+  const kstDate = ts => new Date(ts + 9 * 36e5).toISOString().slice(0, 10);
+  const kstTime = ts => new Date(ts + 9 * 36e5).toISOString().slice(11, 16);
+  function untilText(ts) {
+    const min = Math.max(1, Math.round((ts - Date.now()) / 6e4));
+    return min < 60 ? `${min}분 후` : min < 1440 ? `${Math.floor(min / 60)}시간 ${min % 60}분 후` : `${Math.floor(min / 1440)}일 후`;
+  }
+  function alarmWarning() {
+    const p = DF.push && DF.push.active;
+    if (p) return '';
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    if (ios && !standalone) return `<section class="card notice"><p class="card-title">${icon('alert', 15)} 아직 알람이 울리지 않아요</p><p class="small">Safari 공유 버튼 → “홈 화면에 추가”로 설치한 DAYFLOW에서 알림을 허용해야, 앱이 꺼져 있어도 알람이 울려요.</p></section>`;
+    if (!('Notification' in window) || Notification.permission === 'denied') return `<section class="card notice"><p class="card-title">${icon('alert', 15)} 알림이 꺼져 있어요</p><p class="small">기기 설정에서 DAYFLOW 알림을 허용해야 알람이 울려요.</p></section>`;
+    return `<section class="card notice"><p class="card-title">${icon('alert', 15)} 알림을 허용해 주세요</p><p class="small">알림을 허용해야 앱이 꺼져 있어도 알람이 울려요.</p><button class="btn sm primary" data-allow>${icon('bell', 15)} 알림 허용</button></section>`;
+  }
+  function renderAlarm(params) {
+    const list = DF.alarm.list();
+    const next = list.map(a => ({ a, t: DF.alarm.nextFire(a) })).filter(x => x.t).sort((x, y) => x.t - y.t)[0];
+    view().innerHTML = `${header('알람', next ? `다음 알람: ${esc(T.relLabel(kstDate(next.t)).split(' · ')[0])} ${esc(T.timeK(kstTime(next.t)))} · ${esc(untilText(next.t))}` : '켜진 알람이 없어요.')}
+      ${alarmWarning()}
+      <section class="card alarm-card">
+        <div class="section-head"><h2>알람 ${list.length ? `<span class="muted small">${list.length}개</span>` : ''}</h2><button class="btn sm primary" data-new>${icon('plus', 15)} 알람 추가</button></div>
+        ${list.length ? `<div class="alarm-list">${list.map(a => { const t = ampm(a.time); const rep = DF.alarm.repeatText(a); return `
+          <div class="alarm-row ${a.enabled ? '' : 'off'}" data-id="${esc(a.id)}">
+            <button class="alarm-main" data-edit aria-label="${esc(a.label)} 알람 편집"><span class="alarm-time"><small>${t.ap}</small>${t.hm}</span><span class="alarm-label">${esc(a.label)}${rep ? `, ${esc(rep)}` : ''}</span></button>
+            <label class="switch" aria-label="${esc(a.label)} 알람 켜기/끄기"><input type="checkbox" data-toggle ${a.enabled ? 'checked' : ''}><span></span></label>
+          </div>`; }).join('')}</div>`
+        : `<div class="empty"><p>알람이 없어요.</p><p class="muted">“알람 추가”를 누르거나, AI 비서에게 “7시에 깨워줘”라고 말해 보세요.</p></div>`}
+      </section>
+      <p class="muted small center">알람 시각부터 1분 간격으로 ${DF.alarm.RINGS}번 알림이 와요. 알림을 눌러 ‘중단’하면 남은 알림은 오지 않아요.</p>`;
+    bindHeader();
+    const allow = view().querySelector('[data-allow]');
+    if (allow) allow.addEventListener('click', async () => {
+      try { await DF.push.enable(); U.toast('알림을 켰어요. 이제 앱이 꺼져 있어도 알람이 울려요.'); } catch (e) { U.toast(esc(e.message), { important: true }); }
+      renderAlarm(new URLSearchParams());
+    });
+    view().querySelector('[data-new]').addEventListener('click', () => editAlarm(null));
+    view().querySelectorAll('.alarm-row').forEach(row => {
+      const id = row.dataset.id;
+      row.querySelector('[data-edit]').addEventListener('click', () => editAlarm(DF.alarm.get(id)));
+      row.querySelector('[data-toggle]').addEventListener('change', e => DF.alarm.update(id, { enabled: e.target.checked }));
+    });
+    // 알람 알림을 눌러 들어왔을 때: 중단 / 다시 알림
+    const ring = params.get('ring'), at = params.get('at');
+    if (ring && at) { history.replaceState(null, '', '#/alarm'); ringSheet(ring, +at); }
+  }
+  function editAlarm(a) {
+    const d = a || { time: T.fromMin(Math.ceil((T.now().minutes + 1) / 5) * 5 % 1440), label: '알람', days: [] };
+    const m = U.modal(`<div class="modal-head"><h2>${a ? '알람 편집' : '알람 추가'}</h2><button class="icon-btn" data-close aria-label="닫기">${icon('x')}</button></div>
+      <div class="modal-body">
+        <input type="time" class="alarm-time-input" name="atime" value="${esc(d.time)}" aria-label="알람 시각">
+        <div class="field full"><span>반복</span><div class="chips" data-adays>${[0, 1, 2, 3, 4, 5, 6].map(n => `<label class="chip-check"><input type="checkbox" value="${n}" ${d.days.includes(n) ? 'checked' : ''}><span>${T.DOW[n]}</span></label>`).join('')}</div>
+          <div class="row-gap wrap quick-days"><button class="chip" data-preset="1,2,3,4,5">평일</button><button class="chip" data-preset="0,6">주말</button><button class="chip" data-preset="0,1,2,3,4,5,6">매일</button><button class="chip" data-preset="">안 함</button></div></div>
+        <label class="field full"><span>레이블</span><input name="alabel" maxlength="40" value="${esc(d.label)}" placeholder="알람"></label>
+      </div>
+      <div class="modal-foot">${a ? `<button class="btn ghost danger-text" data-del>${icon('trash', 16)} 알람 삭제</button>` : ''}<span class="grow"></span><button class="btn ghost" data-close>취소</button><button class="btn primary" data-save>저장</button></div>`);
+    m.el.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
+      const set = b.dataset.preset ? b.dataset.preset.split(',').map(Number) : [];
+      m.el.querySelectorAll('[data-adays] input').forEach(i => { i.checked = set.includes(+i.value); });
+    }));
+    m.el.querySelector('[data-save]').addEventListener('click', async () => {
+      const time = m.el.querySelector('[name=atime]').value;
+      if (!T.isTime(time)) return U.toast('시각을 입력해 주세요.');
+      const days = [...m.el.querySelectorAll('[data-adays] input:checked')].map(i => +i.value);
+      const label = m.el.querySelector('[name=alabel]').value.trim() || '알람';
+      const saved = a ? await DF.alarm.update(a.id, { time, days, label, enabled: true }) : await DF.alarm.add({ time, days, label });
+      m.close();
+      const t = DF.alarm.nextFire(saved);
+      U.toast(t ? `알람이 ${esc(untilText(t))}에 울려요.` : '알람을 저장했어요.');
+    });
+    const del = m.el.querySelector('[data-del]');
+    if (del) del.addEventListener('click', async () => { await DF.alarm.remove(a.id); m.close(); U.toast('알람을 삭제했어요.'); });
+  }
+  function ringSheet(id, at) {
+    const a = DF.alarm.get(id);
+    if (!a) return;
+    const t = ampm(kstTime(at));
+    const m = U.modal(`<div class="ring-sheet"><p class="ring-time"><small>${t.ap}</small>${t.hm}</p><p class="ring-label">${esc(a.label)}</p>
+      <button class="btn ring-snooze" data-snooze>다시 알림 (${DF.alarm.SNOOZE_MIN}분 뒤)</button>
+      <button class="btn primary ring-stop" data-stop>중단</button></div>`);
+    m.el.querySelector('[data-stop]').addEventListener('click', async () => { await DF.alarm.stop(id, at); m.close(); U.toast('알람을 껐어요. 남은 알림은 오지 않아요.'); });
+    m.el.querySelector('[data-snooze]').addEventListener('click', async () => { const s = await DF.alarm.snooze(id, at); m.close(); U.toast(`${esc(T.timeK(kstTime(s)))}에 다시 울려요.`); });
+  }
+
   // ───────── AI 비서 ─────────
   function renderAssistant(params) {
     view().innerHTML = `${header('AI 비서', '일정을 말로 추가하고, 묻고, 옮기세요. 바꾸기 전엔 꼭 확인을 받아요.')}
@@ -502,6 +591,7 @@
       if (bd && T.isDate(bd)) { history.replaceState(null, '', '#/today'); showMorning(null, bd); }
     }
     else if (name === 'calendar') renderCalendar();
+    else if (name === 'alarm') renderAlarm(params);
     else if (name === 'assistant') renderAssistant(params);
     else if (name === 'stats') renderStats();
     else if (name === 'settings') renderSettings();
@@ -512,6 +602,7 @@
     if (document.querySelector('.modal-wrap')) { pendingRefresh = true; return; }
     if (current === 'today') renderToday(true);
     else if (current === 'calendar') renderCalendar();
+    else if (current === 'alarm') renderAlarm(new URLSearchParams());
     else if (current === 'stats') renderStats();
   }
   let pendingRefresh = false;
@@ -558,6 +649,8 @@
     }
     applyTheme();
     await DF.chat.load();
+    await DF.alarm.load();
+    DF.alarm.onChange(() => { if (current === 'alarm' && !document.querySelector('.modal-wrap')) renderAlarm(new URLSearchParams()); });
     await DF.push.init();
     S.onChange(() => refresh());
     S.onChange((type) => { if (type === 'settings') { applyTheme(); if (current === 'today') renderToday(true); } });

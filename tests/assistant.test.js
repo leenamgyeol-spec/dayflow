@@ -43,7 +43,14 @@ function lastForm() {
   const r = DF.ui.readForm(f.parentElement);
   return r;
 }
-const added = title => S.all().find(e => e.title === title && !seedIds.has(e.id));
+// 새로 생긴 일정, 없으면 새로 생긴 알람 (알람은 {date, start, alarm} 모양으로 맞춰서 비교)
+function asEvent(a) {
+  const t = DF.alarm.nextFire(a);
+  return { title: a.label, start: a.time, alarm: true, days: a.days, date: t ? new Date(t + 9 * 36e5).toISOString().slice(0, 10) : a.date };
+}
+const added = title => S.all().find(e => e.title === title && !seedIds.has(e.id)) ||
+  (DF.alarm.list().filter(a => a.label === title).map(asEvent)[0]);
+const anyNew = () => S.all().find(e => !seedIds.has(e.id)) || DF.alarm.list().map(asEvent)[0];
 let seedIds = new Set();
 
 // ───────── 판정 도우미 ─────────
@@ -109,12 +116,12 @@ const CASES = [
   ['1분뒤에 씻으라고 알려줘', () => addedAs('씻기', inMinObj(1))()],
   ['30분 후에 숙제하라고 알려줘', () => addedAs('숙제하기', inMinObj(30))()],
   ['10분 있다가 라면 꺼내라고 알려줘', () => addedAs('라면 꺼내기', inMinObj(10))()],
-  ['1시간 뒤에 알려줘', () => addedAs('알림', inMinObj(60))()],
+  ['1시간 뒤에 알려줘', () => addedAs('알람', inMinObj(60))()],
   ['내일 아침 7시에 깨워줘', () => addedAs('기상', { date: plus(1), start: '07:00' })()],
-  ['7시에 알람 맞춰줘', () => addedAs(() => S.all().find(e => !seedIds.has(e.id)), { start: '07:00' })()],
+  ['7시에 알람 맞춰줘', () => addedAs(anyNew, { start: '07:00', alarm: true })()],
   ['밤 10시에 약 먹으라고 알려줘', () => addedAs('약 먹기', { start: '22:00' })()],
   ['5분 뒤에 빨래 꺼내라고 해줘', () => addedAs('빨래 꺼내기', inMinObj(5))()],
-  ['20분 뒤에 알림', () => addedAs('알림', inMinObj(20))()],
+  ['20분 뒤에 알림', () => addedAs('알람', inMinObj(20))()],
   ['2시간 뒤에 엄마한테 전화하라고 알려줘', () => addedAs('엄마한테 전화하기', inMinObj(120))()],
   ['내일 오후 3시에 은행 가라고 알려줘', () => addedAs('은행 가기', { date: plus(1), start: '15:00' })()],
   ['30분마다 물 마시라고 알려줘', notConfused],
@@ -232,6 +239,8 @@ function inMinObj(m) { const x = inMin(m); return { date: x.date, start: x.time 
 export async function run(filter) {
   const backup = S.all();
   const chatBackup = await S.getKV('chat', []);
+  const alarmBackup = DF.alarm.list();
+  const clearAlarms = async () => { for (const a of DF.alarm.list()) await DF.alarm.remove(a.id); };
   seedIds = new Set(seed().map(e => e.id));
   DF.push.call = async () => { const e = new Error('no key'); e.code = 'no_key'; throw e; };
   const results = [];
@@ -240,6 +249,7 @@ export async function run(filter) {
     const [say, check] = CASES[i];
     await S.importData({ app: 'dayflow', events: seed() }, 'replace');
     await DF.chat.clear();
+    await clearAlarms();
     if (location.hash !== '#/assistant') { location.hash = '#/assistant'; await new Promise(r => setTimeout(r, 300)); }
     let r;
     try { await DF.chat.handle(say); r = check(); } catch (e) { r = 'ERROR ' + e.message; }
@@ -247,6 +257,8 @@ export async function run(filter) {
   }
   await S.importData({ app: 'dayflow', events: backup }, 'replace');
   await S.setKV('chat', chatBackup);
+  await clearAlarms();
+  for (const a of alarmBackup) await DF.alarm.add(a);
   const fails = results.filter(x => !x.ok);
   console.table(fails);
   return { pass: results.length - fails.length, total: results.length, fails };
