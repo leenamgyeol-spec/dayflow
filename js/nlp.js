@@ -223,8 +223,8 @@
     const rep = [
       [/(?:매일|날마다)/, () => ({ freq: 'daily' })],
       [/(?:평일마다|매\s*평일|평일\s*매일|주중\s*매일)/, () => ({ freq: 'weekdays' })],
-      [/(?:매주|매\s*주)\s*(월|화|수|목|금|토|일)(?:요일|욜)?(?:마다)?/, mm => ({ freq: 'weekly', date: upcoming(today, DAYMAP[mm[1]]) })],
-      [/(월|화|수|목|금|토|일)(?:요일|욜)\s*마다/, mm => ({ freq: 'weekly', date: upcoming(today, DAYMAP[mm[1]]) })],
+      [/(?:매주|매\s*주)\s*(월|화|수|목|금|토|일)(?:요일|욜)?(?:마다)?/, mm => ({ freq: 'weekly', days: [DAYMAP[mm[1]]], date: upcoming(today, DAYMAP[mm[1]]) })],
+      [/(월|화|수|목|금|토|일)(?:요일|욜)\s*마다/, mm => ({ freq: 'weekly', days: [DAYMAP[mm[1]]], date: upcoming(today, DAYMAP[mm[1]]) })],
       [/매주/, () => ({ freq: 'weekly' })],
       [/(?:매달|매월)\s*(\d{1,2})\s*일/, mm => {
         const { y, m: mo } = T.ymd(today), d = +mm[1];
@@ -234,8 +234,28 @@
       }],
       [/매달|매월/, () => ({ freq: 'monthly' })]
     ];
+    // 간격 반복: "격주 화요일", "2주마다 월수", "3일마다", "이틀마다", "2달마다", 매년, 주말마다
+    const ivRules = [
+      [/(?:격주|(\d+)\s*주\s*(?:마다|에\s*한\s*번|간격))\s*(?:로\s*)?([월화수목금토일]{1,7})?(?:요일|욜)?(?:마다)?/, mm => {
+        const days = mm[2] ? [...new Set([...mm[2]])].map(c => DAYMAP[c]) : null;
+        return { freq: 'weekly', interval: mm[1] ? +mm[1] : 2, days, date: days ? days.map(d => upcoming(today, d)).sort()[0] : null };
+      }],
+      [/(?:(\d+)\s*일|이틀|사흘|나흘)\s*(?:마다|에\s*한\s*번|간격)/, mm => ({ freq: 'daily', interval: mm[1] ? +mm[1] : { 이틀: 2, 사흘: 3, 나흘: 4 }[mm[0].slice(0, 2)] })],
+      [/(\d+)\s*(?:개월|달)\s*(?:마다|에\s*한\s*번|간격)/, mm => ({ freq: 'monthly', interval: +mm[1] })],
+      [/매년|해마다|매해|1년마다/, () => ({ freq: 'yearly' })],
+      [/(?:매주\s*)?주말(?:마다|에\s*매주)|매주\s*주말/, () => ({ freq: 'weekly', days: [6, 0], date: [6, 0].map(d => upcoming(today, d)).sort()[0] })]
+    ];
+    for (const [re, fn] of ivRules) {
+      if ((m = re.exec(work))) {
+        const v = fn(m);
+        r.repeat = { freq: v.freq, interval: v.interval || 1, days: v.days || null };
+        if (v.date) r.date = v.date;
+        work = mask(work, m.index, m[0].length);
+        break;
+      }
+    }
     // "월수금", "매주 화목", "수금 4시" — 여러 요일 반복
-    const multi = /(?:^|\s)(매주\s*)?([월화수목금토일]{2,7})(?:요일)?(마다|에는|엔|에)?(?=\s|$)/.exec(work);
+    const multi = r.repeat.freq === 'none' && /(?:^|\s)(매주\s*)?([월화수목금토일]{2,7})(?:요일)?(마다|에는|엔|에)?(?=\s|$)/.exec(work);
     if (multi) {
       const chars = [...multi[2]];
       const unique = new Set(chars).size === chars.length;
@@ -253,8 +273,8 @@
       if (r.repeat.freq !== 'none') break;
       if ((m = re.exec(work))) {
         const v = fn(m);
-        r.repeat = { freq: v.freq };
-        r.date = v.date || today; // 반복 일정인데 날짜가 없으면 오늘부터
+        r.repeat = { freq: v.freq, days: v.days || null };
+        if (v.date) r.date = v.date;
         work = mask(work, m.index, m[0].length);
         break;
       }
@@ -296,6 +316,27 @@
         }
       }
     }
+    // 반복의 끝·시작·횟수: "12월까지", "12월 20일까지", "다음 달 1일부터", "10번만"
+    if (r.repeat.freq !== 'none') {
+      if ((m = /(\d+)\s*(?:번|회)\s*(?:만|동안)?/.exec(work))) { r.repeat.count = +m[1]; work = mask(work, m.index, m[0].length); }
+      if ((m = /(?:(\d{1,2})\s*월|(이번|다음)\s*달|(올해|연말))\s*(?:말\s*)?까지/.exec(work)) && !/\d\s*월\s*\d/.test(m[0])) {
+        let until;
+        if (m[1]) { const { y, m: cur } = T.ymd(today); until = T.monthEnd(T.make(+m[1] < cur ? y + 1 : y, +m[1], 1)); }
+        else if (m[2]) until = T.monthEnd(m[2] === '다음' ? T.addMonths(T.monthStart(today), 1) : today);
+        else until = T.make(T.ymd(today).y, 12, 31);
+        r.repeat.until = until;
+        work = mask(work, m.index, m[0].length);
+      }
+      const ds = findDates(work, today, { future });
+      ds.found.forEach(d => {
+        const after = work.slice(d.index + d.len);
+        const tm = /^\s*(까지|부터)/.exec(after);
+        if (!tm) return;
+        if (tm[1] === '까지') r.repeat.until = d.date;
+        else if (!r.date || d.date > r.date) r.date = r.repeat.days ? r.repeat.days.map(x => upcoming(d.date, x)).sort()[0] : d.date;
+        work = mask(work, d.index, d.len + tm[0].length);
+      });
+    }
     const dates = findDates(work, today, { future });
     if (dates.found.length) {
       const first = dates.found[0];
@@ -329,6 +370,12 @@
     const tm = r.start ? null : findTime(work);
     if (tm) {
       r.start = tm.start; r.end = tm.end;
+      // 아침에 하는 일이면 오후가 아니라 오전으로 ("7시 반 기상", "8시 등교")
+      if (tm.assumed === 'pm' && /기상|일어나|깨|등교|출근|아침|조깅|모닝/.test(text)) {
+        r.start = T.fromMin(T.toMin(tm.start) - 720);
+        if (r.end) r.end = T.fromMin(T.toMin(r.end) - 720);
+        tm.start = r.start;
+      }
       if (tm.assumed) r.assumptions.push(`오전/오후 표시가 없어 ${josa(T.timeK(tm.start), '으로/로')} 이해했어요.`);
       work = mask(work, tm.index, tm.len);
     }
@@ -362,6 +409,7 @@
       if (r.title.endsWith('이') ? batchim : (!batchim && !keep)) r.title = base;
     }
     if (r.date && opts.future !== false && r.date < today && r.repeat.freq === 'none') r.assumptions.push('지난 날짜예요. 맞는지 확인해 주세요.');
+    if (r.repeat.freq !== 'none' && !r.date) r.date = today; // 반복인데 시작 날짜가 없으면 오늘부터
     if (!r.title) r.missing.push('title');
     if (!r.date) r.missing.push('date');
     if (!r.start) r.missing.push('time');

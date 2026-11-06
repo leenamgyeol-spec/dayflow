@@ -11,7 +11,7 @@
     '가족': '#d6457a', '취미': '#0f9bb5', '기타': '#868e96'
   };
   const PRIORITY = { high: '높음', normal: '보통', low: '낮음' };
-  const REPEAT = { none: '반복 안 함', daily: '매일', weekdays: '평일마다', weekly: '매주', monthly: '매달' };
+  const REPEAT = { none: '반복 안 함', daily: '매일', weekdays: '평일마다', weekly: '매주', monthly: '매달', yearly: '매년' };
   const DEFAULT_SETTINGS = {
     name: '', morningTime: '07:30', eveningTime: '21:00', city: '서울', theme: 'system',
     defaultReminder: 10, autoBriefing: true
@@ -43,9 +43,20 @@
     e.category = CATEGORIES.includes(e.category) ? e.category : '기타';
     const rp = e.repeat && typeof e.repeat === 'object' ? e.repeat : { freq: e.repeat || 'none' };
     e.repeat = { freq: REPEAT[rp.freq] ? rp.freq : 'none', until: T.isDate(rp.until) ? rp.until : null };
+    // 간격: 2면 격주·2일마다·2달마다 (매일·매주·매달에만)
+    const iv = Math.round(Number(rp.interval));
+    e.repeat.interval = ['daily', 'weekly', 'monthly'].includes(e.repeat.freq) && iv >= 2 && iv <= 52 ? iv : 1;
     // 매주 반복할 요일 여러 개 (0=일 … 6=토). 없으면 시작 날짜의 요일
     const days = e.repeat.freq === 'weekly' && Array.isArray(rp.days) ? [...new Set(rp.days.map(Number).filter(d => d >= 0 && d <= 6))].sort() : [];
     e.repeat.days = days.length ? days : null;
+    // "10번만" → 10번째 날을 반복 종료일로 바꿔 저장한다
+    const count = Math.round(Number(rp.count));
+    if (e.repeat.freq !== 'none' && count >= 1 && !e.repeat.until && T.isDate(e.date)) {
+      let n = 0;
+      for (let d = e.date, i = 0; i < 3660; d = T.addDays(d, 1), i++) {
+        if (occursOn(Object.assign({}, e, { skip: [] }), d) && ++n === count) { e.repeat.until = d; break; }
+      }
+    }
     // 여러 날 일정: date ~ endDate (반복 일정과 함께 쓰지 않는다, 최대 1년)
     e.endDate = e.repeat.freq === 'none' && T.isDate(e.endDate) && e.endDate > e.date && T.diff(e.date, e.endDate) <= 366 ? e.endDate : null;
     e.reminders = Array.isArray(e.reminders)
@@ -144,8 +155,14 @@
   /** 날짜별로 따로 완료·삭제되는 일정(반복 또는 여러 날) */
   function repeatLabel(rp) {
     if (!rp || rp.freq === 'none') return '';
-    if (rp.freq === 'weekly' && rp.days) return '매주 ' + [1, 2, 3, 4, 5, 6, 0].filter(d => rp.days.includes(d)).map(d => T.DOW[d]).join('·');
-    return REPEAT[rp.freq];
+    const iv = rp.interval || 1;
+    const days = rp.days ? ' ' + [1, 2, 3, 4, 5, 6, 0].filter(d => rp.days.includes(d)).map(d => T.DOW[d]).join('·') : '';
+    let s;
+    if (rp.freq === 'weekly') s = (iv === 2 ? '격주' : iv > 2 ? `${iv}주마다` : '매주') + days;
+    else if (rp.freq === 'daily' && iv > 1) s = `${iv}일마다`;
+    else if (rp.freq === 'monthly' && iv > 1) s = `${iv}달마다`;
+    else s = REPEAT[rp.freq];
+    return rp.until ? `${s} (~${T.fmtDate(rp.until, false)})` : s;
   }
   function isSeries(ev) { return ev.repeat.freq !== 'none' || !!ev.endDate; }
   function lastDate(ev) { return ev.endDate || (ev.repeat.freq === 'none' ? ev.date : ev.repeat.until); }
@@ -153,12 +170,20 @@
     if (date < ev.date) return false;
     if (ev.repeat.until && date > ev.repeat.until) return false;
     if (ev.skip.includes(date)) return false;
+    const iv = ev.repeat.interval || 1;
     switch (ev.repeat.freq) {
       case 'none': return date === ev.date || (!!ev.endDate && date <= ev.endDate);
-      case 'daily': return true;
+      case 'daily': return T.diff(ev.date, date) % iv === 0;
       case 'weekdays': { const d = T.dow(date); return d >= 1 && d <= 5; }
-      case 'weekly': return ev.repeat.days ? ev.repeat.days.includes(T.dow(date)) : T.dow(date) === T.dow(ev.date);
-      case 'monthly': return T.ymd(date).d === T.ymd(ev.date).d;
+      case 'weekly': {
+        const dayOk = ev.repeat.days ? ev.repeat.days.includes(T.dow(date)) : T.dow(date) === T.dow(ev.date);
+        return dayOk && (iv === 1 || (T.diff(T.weekStart(ev.date), T.weekStart(date)) / 7) % iv === 0);
+      }
+      case 'monthly': {
+        const a = T.ymd(ev.date), b = T.ymd(date);
+        return b.d === a.d && ((b.y - a.y) * 12 + b.m - a.m) % iv === 0;
+      }
+      case 'yearly': { const a = T.ymd(ev.date), b = T.ymd(date); return a.m === b.m && a.d === b.d; }
       default: return false;
     }
   }
@@ -343,7 +368,7 @@
   function toICS() {
     const esc = s => String(s).replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n');
     const dt = (d, t) => d.replace(/-/g, '') + (t ? 'T' + t.replace(':', '') + '00' : '');
-    const rr = { daily: 'FREQ=DAILY', weekdays: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY' };
+    const rr = { daily: 'FREQ=DAILY', weekdays: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', weekly: 'FREQ=WEEKLY', monthly: 'FREQ=MONTHLY', yearly: 'FREQ=YEARLY' };
     const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//DAYFLOW//KO', 'CALSCALE:GREGORIAN'];
     all().forEach(e => {
       lines.push('BEGIN:VEVENT', 'UID:' + e.id + '@dayflow', 'SUMMARY:' + esc(e.title));
@@ -355,7 +380,8 @@
       }
       if (e.endDate && e.start) lines.push('RRULE:FREQ=DAILY;UNTIL=' + dt(e.endDate) + 'T235959');
       const byDay = e.repeat.days ? ';BYDAY=' + e.repeat.days.map(d => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][d]).join(',') : '';
-      if (e.repeat.freq !== 'none') lines.push('RRULE:' + rr[e.repeat.freq] + byDay + (e.repeat.until ? ';UNTIL=' + dt(e.repeat.until) + 'T235959' : ''));
+      const interval = e.repeat.interval > 1 ? ';INTERVAL=' + e.repeat.interval : '';
+      if (e.repeat.freq !== 'none') lines.push('RRULE:' + rr[e.repeat.freq] + interval + byDay + (e.repeat.until ? ';UNTIL=' + dt(e.repeat.until) + 'T235959' : ''));
       if (e.location) lines.push('LOCATION:' + esc(e.location));
       if (e.description) lines.push('DESCRIPTION:' + esc(e.description));
       lines.push('CATEGORIES:' + esc(e.category), 'END:VEVENT');

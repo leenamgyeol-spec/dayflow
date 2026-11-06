@@ -52,7 +52,8 @@ const form = exp => () => {
   const f = lastForm();
   if (!f) return 'no draft card';
   for (const [k, v] of Object.entries(exp)) {
-    const got = k === 'days' ? (f.repeat.days || []).slice().sort().join(',') : k === 'freq' ? f.repeat.freq : k === 'reminders' ? f.reminders.join(',') : f[k];
+    const got = k === 'days' ? (f.repeat.days || []).slice().sort().join(',') : k === 'freq' ? f.repeat.freq : k === 'interval' ? f.repeat.interval
+      : k === 'until' ? f.repeat.until : k === 'reminders' ? f.reminders.join(',') : f[k];
     const ok = v instanceof RegExp ? v.test(String(got || '')) : String(got || '') === String(v);
     if (!ok) return `${k}: got ${JSON.stringify(got)} want ${v}`;
   }
@@ -199,7 +200,25 @@ const CASES = [
   ['아침 7시 알람', () => addedAs('알람', { date: atOrNext('07:00'), start: '07:00', alarm: true })()],
   ['알람 6시 30분', () => addedAs('알람', { date: atOrNext('06:30'), start: '06:30' })()],
   ['매일 아침 7시에 일어나라고 해줘', () => addedAs('일어나기', { start: '07:00' })()],
-  ['오후 3시에 약 먹으라고 해줘', () => addedAs('약 먹기', { date: atOrNext('15:00'), start: '15:00' })()]
+  ['오후 3시에 약 먹으라고 해줘', () => addedAs('약 먹기', { date: atOrNext('15:00'), start: '15:00' })()],
+
+  // 반복 일정 (107-122)
+  ['격주 화요일 오후 4시 피아노', () => form({ freq: 'weekly', interval: 2, days: '2', start: '16:00', title: /^피아노$/ })()],
+  ['2주마다 월수 영어 회화', () => form({ freq: 'weekly', interval: 2, days: '1,3', title: /영어 회화/ })()],
+  ['3일마다 화분에 물 주기', () => form({ freq: 'daily', interval: 3, title: /물 주기/ })()],
+  ['이틀마다 운동', () => form({ freq: 'daily', interval: 2, title: /^운동$/ })()],
+  ['2달마다 미용실 가기', () => form({ freq: 'monthly', interval: 2, title: /미용실/ })()],
+  ['매년 3월 15일 엄마 생일', () => form({ freq: 'yearly', date: '2027-03-15', title: /엄마 생일/ })()],
+  ['주말마다 오전 10시 수영', () => form({ freq: 'weekly', days: '0,6', start: '10:00', title: /^수영$/ })()],
+  ['12월까지 매주 화요일 피아노 추가', () => form({ freq: 'weekly', days: '2', until: '2026-12-31', title: /^피아노$/ })()],
+  ['12월 20일까지 매일 아침 7시 조깅', () => form({ freq: 'daily', until: '2026-12-20', start: '07:00', title: /조깅/ })()],
+  ['다음 달 1일부터 매주 목요일 오후 6시 기타 레슨', () => form({ freq: 'weekly', days: '4', date: '2026-12-03', start: '18:00', title: /기타 레슨/ })()],
+  ['매주 금요일 7시 축구 10번만', () => form({ freq: 'weekly', days: '5', until: T.addDays(next(5), 63), title: /^축구$/ })()],
+  ['매달 5일 용돈 받기', () => form({ freq: 'monthly', date: '2026-12-05', title: /용돈 받기/ })()],
+  ['평일마다 7시 반 기상', () => form({ freq: 'weekdays', start: '07:30', title: /기상/ })()],
+  ['매주 월수금 오후 5시 헬스', () => form({ freq: 'weekly', days: '1,3,5', start: '17:00', title: /헬스/ })()],
+  ['매일 밤 10시 일기', () => form({ freq: 'daily', start: '22:00', title: /일기/ })()],
+  ['매주 일요일 교회 추가해 줘', () => form({ freq: 'weekly', days: '0', date: next(0), title: /교회/ })()]
 ];
 /** 오전/오후를 안 말했을 때 가장 가까운 앞으로의 시각 */
 function nearest(h, m) {

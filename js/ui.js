@@ -148,6 +148,8 @@
       <label class="field"><span>중요도</span><select name="priority">${Object.entries(S.PRIORITY).map(([k, v]) => `<option value="${k}" ${k === d.priority ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="field"><span>반복</span><select name="repeat">${Object.entries(S.REPEAT).map(([k, v]) => `<option value="${k}" ${k === (d.repeat && d.repeat.freq) ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label class="field"><span>반복 종료일</span><input type="date" name="until" value="${esc((d.repeat && d.repeat.until) || '')}"></label>
+      <div class="field full interval-field" data-interval-wrap ${d.repeat && ['daily', 'weekly', 'monthly'].includes(d.repeat.freq) ? '' : 'hidden'}><span>간격</span>
+        <label class="interval"><input type="number" name="interval" min="1" max="52" inputmode="numeric" value="${esc((d.repeat && d.repeat.interval) || 1)}"><em data-interval-unit>${{ daily: '일', weekly: '주', monthly: '달' }[(d.repeat && d.repeat.freq)] || '주'}마다</em><small class="muted">2주마다 = 격주</small></label></div>
       <div class="field full" data-days-wrap ${d.repeat && d.repeat.freq === 'weekly' ? '' : 'hidden'}><span>반복할 요일</span><div class="chips" data-days>
         ${[1, 2, 3, 4, 5, 6, 0].map(n => { const on = d.repeat && d.repeat.days ? d.repeat.days.includes(n) : T.isDate(d.date) && T.dow(d.date) === n; return `<label class="chip-check"><input type="checkbox" value="${n}" ${on ? 'checked' : ''}><span>${T.DOW[n]}</span></label>`; }).join('')}
       </div></div>
@@ -162,8 +164,14 @@
   // 폼 안에서 반복을 '매주'로 고르면 요일 선택을 보여 준다
   document.addEventListener('change', e => {
     if (!e.target.matches('[data-form] [name="repeat"]')) return;
-    const w = e.target.closest('[data-form]').querySelector('[data-days-wrap]');
-    if (w) w.hidden = e.target.value !== 'weekly';
+    const f = e.target.closest('[data-form]'), v = e.target.value;
+    const w = f.querySelector('[data-days-wrap]');
+    if (w) w.hidden = v !== 'weekly';
+    const iw = f.querySelector('[data-interval-wrap]');
+    if (iw) {
+      iw.hidden = !['daily', 'weekly', 'monthly'].includes(v);
+      iw.querySelector('[data-interval-unit]').textContent = ({ daily: '일', weekly: '주', monthly: '달' }[v] || '주') + '마다';
+    }
   });
   function readForm(root) {
     const f = root.querySelector('[data-form]');
@@ -174,7 +182,7 @@
     const doneEl = f.querySelector('[name="done"]');
     const out = {
       title: v('title'), date: v('date'), endDate: v('endDate') && v('endDate') !== v('date') ? v('endDate') : null, start: v('start') || null, end: v('end') || null, location: v('location'),
-      category: v('category'), priority: v('priority'), repeat: { freq: v('repeat'), until: v('until') || null, days: v('repeat') === 'weekly' ? [...f.querySelectorAll('[data-days] input:checked')].map(i => +i.value) : null }, reminders
+      category: v('category'), priority: v('priority'), repeat: { freq: v('repeat'), until: v('until') || null, interval: +v('interval') || 1, days: v('repeat') === 'weekly' ? [...f.querySelectorAll('[data-days] input:checked')].map(i => +i.value) : null }, reminders
     };
     const desc = f.querySelector('[name="description"]');
     if (desc) out.description = desc.value.trim();

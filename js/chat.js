@@ -369,6 +369,8 @@
 
   // ───────── 추가 ─────────
   function draftCard(p, title) {
+    // "10번만"은 폼에 칸이 없으니 반복 종료일로 바꿔서 보여 준다
+    if (p.repeat && p.repeat.count && !p.repeat.until) p.repeat = Object.assign({}, p.repeat, { until: S.normalize(Object.assign({}, p, { id: 'tmp' })).repeat.until });
     const d = Object.assign({}, p, { reminders: p.reminders || [S.settings.defaultReminder].filter(x => x > 0 || x === 0) });
     const notes = [];
     p.assumptions.forEach(a => notes.push(esc(a)));

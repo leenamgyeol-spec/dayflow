@@ -571,3 +571,7 @@
   DF.app = { route, quickAdd, showMorning, openSearch };
   boot();
 })(window.DF = window.DF || {});
+
+/* iPhone Safari는 user-scalable=no를 무시하므로, 두 손가락 확대 제스처를 직접 막는다 */
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+document.addEventListener('touchmove', e => { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
