@@ -55,6 +55,7 @@
     e.completions = e.completions && typeof e.completions === 'object' ? e.completions : {};
     e.skip = Array.isArray(e.skip) ? e.skip.filter(T.isDate) : [];
     e.pendingDecision = !!e.pendingDecision;
+    e.alarm = !!e.alarm; // "7시에 ~하라고 해줘"로 만든 알람 (정시에 눈에 띄게 알림)
     e.people = Array.isArray(e.people) ? e.people.slice(0, 10) : [];
     e.createdAt = e.createdAt || Date.now();
     e.updatedAt = e.updatedAt || Date.now();

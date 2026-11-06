@@ -130,25 +130,39 @@
   }
 
   function intent(t) {
+    t = t.trim();
+    if (/^(안녕|ㅎㅇ|하이|hi|hello|반가워|좋은\s*(아침|저녁))/i.test(t)) return 'hello';
+    if (/^(고마워|고맙|감사|땡큐|ㄱㅅ|thx|thanks|굿|좋아|오케이|ok|알겠어|ㅇㅋ)/i.test(t)) return 'thanks';
+    if (/(뭐\s*할\s*수\s*있|무엇을\s*할\s*수|사용법|도움말|기능\s*(알려|뭐))/.test(t)) return 'help';
+    if (/날씨|비\s*(와|올까|오나)|우산|기온|춥|더워|덥/.test(t) && !/추가|알려\s*줘라고/.test(t)) return 'weather';
     if (/브리핑/.test(t)) return 'briefing';
     if (/하루\s*마감|마감\s*시작|하루\s*정리|오늘\s*정리|회고/.test(t)) return 'evening';
-    // "1분 뒤에 씻으라고 알려줘", "7시에 깨워줘", "10시에 알림 맞춰줘"
-    const relTime = /\d+\s*(분|시간)\s*(반\s*)?(뒤|후|있다가|이따)/.test(t);
-    if (/라고\s*(좀\s*)?(알려|말해|해\s*줘)|깨워|알림\s*(맞춰|설정|해\s*줘|해줘)|리마인드/.test(t) || (relTime && /알려|알림/.test(t))) return 'remind';
-    if (/(옮겨|옮기|이동|미뤄|미루|연기|당겨|변경해|바꿔)/.test(t) && !/추가/.test(t)) return 'move';
-    if (/(삭제|지워|지우|없애|빼\s*줘|취소)/.test(t) && !/추가/.test(t)) return 'delete';
-    if (/(완료|끝냈|끝났|다\s*했|마쳤|했어\s*$|했음\s*$)/.test(t) && !/몇|얼마/.test(t) && !/추가/.test(t)) return 'complete';
+    const changeVerb = /(옮겨|옮기|이동|미뤄|미루|연기|당겨|변경|바꿔|바꾸|늦춰)/;
+    // "장소 메가박스로 바꿔줘", "중요 일정으로 표시해 줘"
+    if ((/장소|제목|이름/.test(t) && changeVerb.test(t)) || (/중요/.test(t) && /(표시|바꿔|변경|설정|해\s*줘|해줘|으로)/.test(t) && !/추가/.test(t))) return 'edit';
+    // "1분 뒤에 씻으라고 알려줘", "7시에 깨워줘", "알람 맞춰줘"
+    const relTime = /\d+\s*(분|시간)\s*(반\s*)?(뒤|후|있다가|이따)(?!로)/.test(t);
+    if (/라고\s*(좀\s*)?(알려|말해|해\s*줘|해줘|해\s*주세요)|깨워|(알림|알람)\s*(맞춰|설정|해\s*줘|해줘|켜)|알람(?!\s*(취소|꺼|삭제|지워|없애))|리마인드/.test(t) || (relTime && /알려|알림/.test(t))) return 'remind';
+    // "피부과 30분 전에 알려줘" → 일정 추가 + 알림
+    if (/(\d+\s*(분|시간)|하루)\s*전에?\s*(알려|알림)/.test(t)) return 'add';
+    if (changeVerb.test(t) && !/추가/.test(t)) return 'move';
+    if (/(삭제|지워|지우|없애|빼\s*줘|취소|안\s*할래|안\s*해도|안\s*갈래|안\s*가도|못\s*가|빠질래|빠져|째|건너뛸래|패스할래)/.test(t) && !/추가/.test(t)) return 'delete';
+    if (/(완료|끝냈|끝났|끝냄|다\s*했|마쳤|마침|다녀왔|갔다\s*왔|하고\s*왔|끝!)/.test(t) && !/몇|얼마|언제|기로/.test(t) && !/추가/.test(t)) return 'complete';
+    if (/(몇\s*시에?\s*(끝나|마쳐|마치|끝)|언제\s*(끝나|마쳐))/.test(t)) return 'dayend';
     if (/몇\s*(번|개|회|시간)|횟수|얼마나/.test(t)) return 'count';
     if (/(가장|제일)\s*(바쁜|바빴|한가|여유)/.test(t)) return 'busiest';
     if (/(먼저|우선)\s*(준비|해야|챙겨|할)|준비할\s*(것|거)|챙길\s*(것|거)/.test(t)) return 'prepare';
     if (/(빈\s*시간|여유\s*시간|시간\s*(비|있|되)|한가한\s*시간|언제\s*시간)/.test(t)) return 'free';
     if (/통계|완료율|분석/.test(t)) return 'stats';
-    if (/(찾아|검색|언제였|언제\s*만났|언제\s*봤)/.test(t)) return 'search';
+    if (/(찾아|검색)/.test(t)) return 'search';
+    if (/(다음|이번)\s*일정|지금\s*(뭐|무슨)|뭐\s*해야\s*(돼|되|해|하)|다음에\s*뭐/.test(t)) return 'next';
+    // "치과 언제야?", "학원 몇 시야?", "민수랑 약속 언제였지?"
+    if (/(언제|몇\s*시)/.test(t) && keywords(t.replace(/언제\S*|몇\s*시\S*/g, ' ')).length) return 'when';
+    if (/(앞으로|다가오|예정된|바쁜\s*날)/.test(t) && !/추가/.test(t)) return 'forecast';
     if (/(추가|등록|잡아|넣어|기록해|저장해|생겼|해야\s*해|가야\s*해|있어$|있음$|약속)/.test(t)) return 'add';
-    if (/(일정|스케줄|뭐\s*(있|해)|알려|보여|어때)/.test(t)) return 'query';
+    if (/(일정|스케줄|뭐\s*(있|해|했)|알려|보여|어때|남은)/.test(t)) return 'query';
     const p = N.parse(t);
-    if (p.date && p.title) return 'add';
-    if (/(앞으로|다가오|예정|바쁜\s*날)/.test(t)) return 'forecast';
+    if ((p.date || p.repeat.freq !== 'none') && p.title) return 'add';
     return 'help';
   }
 
@@ -169,12 +183,121 @@
       case 'stats': return statsReply();
       case 'search': return search(t);
       case 'forecast': return forecastReply();
+      case 'hello': return hello();
+      case 'thanks': return say(['천만에요. 또 필요하면 불러 주세요.', '별말씀을요. 오늘도 잘 챙겨 볼게요.', '언제든지요!'][Math.floor(Math.random() * 3)]);
+      case 'weather': return weatherReply(t);
+      case 'edit': return editFlow(t);
+      case 'next': return nextReply();
+      case 'when': return whenReply(t);
+      case 'dayend': return dayEndReply(t);
+      case 'help': return help(true);
       default: return help();
     }
   }
 
-  function help() {
-    say(`이해하지 못했어요. 이렇게 말해 보세요.${bullet([
+  function hello() {
+    const n = T.now();
+    const g = n.h < 5 ? '늦은 밤이에요' : n.h < 11 ? '좋은 아침이에요' : n.h < 17 ? '안녕하세요' : '좋은 저녁이에요';
+    const left = S.on(n.date).filter(o => !o.done && (!o.start || S.span(o)[1] > n.minutes));
+    say(`${g}${S.settings.name ? ', ' + esc(S.settings.name) + '님' : ''}! 안녕하세요. ${left.length ? `오늘 남은 일정은 ${left.length}개예요.` : '오늘 남은 일정은 없어요.'} 무엇을 도와드릴까요?`);
+  }
+
+  async function weatherReply(t) {
+    const w = await DF.weather.get().catch(() => null);
+    if (!w || !w.ok) return say('지금은 날씨 정보를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.');
+    const d = N.findDates(t, T.now().date).found[0];
+    const date = d ? d.date : T.now().date;
+    const day = DF.weather.forDate(w, date);
+    if (!day) return say('그날 날씨는 아직 알 수 없어요. 3일 안의 날씨만 볼 수 있어요.');
+    const [desc] = DF.weather.describe(day.code);
+    let h = `${esc(w.city)} ${esc(T.relLabel(date).split(' · ')[0])} 날씨는 ${esc(desc)}, 최고 ${day.max}° / 최저 ${day.min}°예요.`;
+    if (date === T.now().date) h += ` 지금은 ${w.temp}° (체감 ${w.feels}°)예요.`;
+    if (day.rain != null) h += day.rain >= 50 ? ` 비 올 확률이 ${day.rain}%라 우산을 챙기세요.` : ` 비 올 확률은 ${day.rain}%예요.`;
+    say(h);
+  }
+
+  /** 다음 일정 (지금 진행 중이면 그것부터) */
+  function nextReply() {
+    const n = T.now();
+    const occs = S.occurrences(n.date, T.addDays(n.date, 14)).filter(o => !o.done && o.start && T.epoch(o.occDate, o.start) + (S.span(o)[1] - S.span(o)[0]) * 6e4 > Date.now());
+    const untimed = S.on(n.date).filter(o => !o.done && !o.start);
+    const o = occs[0];
+    const todo = untimed.length ? `<br><span class="muted">시간이 정해지지 않은 오늘 할 일: ${untimed.map(u => esc(u.title)).join(', ')}</span>` : '';
+    if (!o) return say((untimed.length ? '시간이 정해진 남은 일정은 없어요.' : '앞으로 2주 동안 남은 일정이 없어요.') + todo);
+    const left = Math.round((T.epoch(o.occDate, o.start) - Date.now()) / 6e4);
+    const when = left <= 0 ? '지금 진행 중' : `${T.relLabel(o.occDate).split(' · ')[0]} ${T.timeK(o.start)}${left < 180 ? ` (${T.durK(left)} 뒤)` : ''}`;
+    const prep = B.prepFor(o);
+    say(`다음 일정은 <b>‘${esc(o.title)}’</b> — ${esc(when)}.${o.location ? ` 장소는 ${esc(o.location)}.` : ''}${prep ? ` 챙길 것: ${esc(prep)}.` : ''}${todo}`);
+  }
+
+  /** "치과 언제야?" — 키워드에 맞는 가장 가까운 다음 일정 (없으면 가장 최근 지난 일정) */
+  function whenReply(t) {
+    const kws = keywords(t.replace(/언제\S*|몇\s*시\S*/g, ' '));
+    const today = T.now().date;
+    const match = o => kws.some(k => (o.title + ' ' + o.location + ' ' + (o.people || []).join(' ')).includes(k));
+    const nowTs = Date.now();
+    const future = S.occurrences(today, T.addDays(today, 180)).filter(o => match(o) && (!o.start || T.epoch(o.occDate, o.start) + 60 * 6e4 > nowTs || o.occDate > today));
+    const pastAsk = /였|었|했|갔|봤|만났/.test(t);
+    const past = S.occurrences(T.addDays(today, -180), today).filter(match).reverse();
+    const o = pastAsk ? (past[0] || future[0]) : (future[0] || past[0]);
+    if (!o) return say(`‘${esc(kws.join(' '))}’ 일정을 찾지 못했어요.`);
+    const span = o.endDate ? ` ~ ${T.fmtDate(o.endDate)}` : '';
+    const time = o.start ? ` ${T.timeK(o.start)}${o.end ? `~${T.timeK(o.end)}` : ''} (${o.start}${o.end ? '–' + o.end : ''})` : '';
+    let h = `${qj(o.title, '은/는')} ${esc(T.relLabel(o.endDate ? o.date : o.occDate))}${esc(span)}${esc(time)}${o.occDate < today ? '이었어요' : '이에요'}.`;
+    if (o.isRepeat && !o.isMulti) h += ` (${esc(S.repeatLabel(o.repeat))} 반복)`;
+    if (o.location) h += ` 장소: ${esc(o.location)}.`;
+    say(h);
+  }
+
+  /** "오늘 몇 시에 끝나?", "학교 몇 시에 끝나?" */
+  function dayEndReply(t) {
+    const today = T.now().date;
+    const d = N.findDates(t, today).found[0];
+    const date = d ? d.date : today;
+    const kws = keywords(t.replace(/(몇\s*시에?|언제)\s*(끝나|마쳐|마치|끝)\S*/g, ' '));
+    let occs = S.on(date).filter(o => o.start);
+    if (kws.length) occs = occs.filter(o => kws.some(k => o.title.includes(k)));
+    if (!occs.length) return say(`${esc(T.relLabel(date).split(' · ')[0])}에는 ${kws.length ? `‘${esc(kws.join(' '))}’ ` : ''}시간이 정해진 일정이 없어요.`);
+    const last = occs.reduce((a, o) => (S.span(o)[1] > S.span(a)[1] ? o : a));
+    const endMin = S.span(last)[1];
+    say(kws.length ? `${qj(last.title, '은/는')} ${esc(T.fromMin(endMin))}(${esc(T.timeK(T.fromMin(endMin)))})에 끝나요.${last.end ? '' : ' 끝나는 시간이 없어서 1시간으로 계산했어요.'}`
+      : `${esc(T.relLabel(date).split(' · ')[0])} 마지막 일정은 ${qj(last.title, '이고/고')} ${esc(T.fromMin(endMin))}에 끝나요.${last.end ? '' : ' (끝나는 시간이 없어서 1시간으로 계산했어요)'}`);
+  }
+
+  /** 장소·제목·중요도 바꾸기 */
+  function editFlow(t) {
+    const today = T.now().date;
+    let patch = {}, label;
+    let m;
+    if (/중요/.test(t)) {
+      const off = /(안\s*중요|중요하지\s*않|중요\s*(해제|취소|빼)|보통)/.test(t);
+      patch.priority = off ? 'normal' : 'high';
+      label = off ? '중요도 → 보통' : '중요 일정으로 표시';
+    } else if ((m = /장소\S*\s*(?:를|을)?\s*(.+?)(?:으로|로)\s*(?:바꿔|변경|바꾸)/.exec(t))) {
+      patch.location = m[1].trim();
+      label = `장소 → ${patch.location}`;
+    } else if ((m = /(?:제목|이름)\S*\s*(?:를|을)?\s*(.+?)(?:으로|로)\s*(?:바꿔|변경|바꾸)/.exec(t))) {
+      patch.title = m[1].trim();
+      label = `제목 → ${patch.title}`;
+    } else return say('무엇을 바꿀지 알려 주세요. 예: “영화 장소 메가박스로 바꿔줘”');
+    const stripped = t.replace(/(장소|제목|이름)\S*.*$/, ' ').replace(/중요\S*.*$/, ' ');
+    const { occs } = matchOccs(stripped, today);
+    const seen = new Set();
+    const list = occs.filter(o => (seen.has(o.id) ? false : seen.add(o.id)));
+    if (!list.length) return say('바꿀 일정을 찾지 못했어요. 일정 이름을 함께 말씀해 주세요.');
+    say(`다음 일정을 이렇게 바꿀까요? <b>${esc(label)}</b>` + card(`${pickList(list)}<div class="card-actions"><button class="btn ghost" data-act="cancel">취소</button><button class="btn primary" data-act="ok">바꾸기</button></div>`, {
+      ok: async c => {
+        const sel = picked(c, list);
+        for (const o of sel) await S.update(o.id, patch);
+        resolveCard(c.dataset.card, `${sel.length}개 변경 완료`);
+        say(`${sel.length}개 일정을 바꿨어요. (${esc(label)})`);
+      },
+      cancel: c => resolveCard(c.dataset.card, '취소했어요')
+    }));
+  }
+
+  function help(asked) {
+    say(`${asked ? '이런 걸 할 수 있어요.' : '이해하지 못했어요. 이렇게 말해 보세요.'}${bullet([
       '“내일 오후 5시에 친구랑 축구” — 일정 추가',
       '“이번 주 일정 알려줘” — 일정 조회',
       '“금요일 일정을 토요일로 옮겨줘” — 일정 이동',
@@ -191,9 +314,13 @@
     const tm = N.findTime(work);
     if (tm) work = work.slice(0, tm.index) + ' ' + work.slice(tm.index + tm.len);
     return work
+      .replace(/[?!.,~ㅠㅜ]+/g, ' ')
       .replace(/(으로|로)\s*(옮|이동|미뤄|미루|연기|당겨|변경|바꿔)\S*/g, ' ')
-      .replace(/(삭제|지워|지우|없애|취소|완료|끝냈|끝났|다\s*했|마쳤|했어|했음|처리|해\s*줘|해줘|줘|주세요|할래|하자|좀|일정|스케줄|전부|모두|다음\s*주|이번\s*주|오늘|내일)/g, ' ')
-      .split(/\s+/).map(w => w.replace(/(을|를|은|는|이|가|도|에서|에|의|랑|이랑|하고|과|와)$/, '')).filter(w => w && w.length >= 1 && !STOP.test(w));
+      .replace(/(삭제|지워|지우|없애|취소|완료|끝냈|끝났|끝냄|다\s*했|마쳤|마침|다녀왔|갔다\s*왔|하고\s*왔|했어|했음|처리|해\s*줘|해줘|줘|주세요|할래|하자|좀|일정|스케줄|전부|모두|다음\s*주|이번\s*주|오늘|내일|안\s*할래|안\s*갈래|빠질래|빠져|못\s*가|됐어|되었어|언제|몇\s*시|몇\s*번|몇\s*개|뭐야|있어|있지|였지|이었지|야|요)/g, ' ')
+      // 조사 떼기 — 떼고 나서 두 글자 이상 남을 때만 ("치과"의 '과'는 조사가 아니다)
+      .split(/\s+/).map(w => { const s = w.replace(/(을|를|은|는|이|가|도|에서|에|의|랑|이랑|하고|과|와)$/, ''); return s.length >= 2 ? s : w; })
+      // 한 글자 조각("어", "다")은 일정 이름으로 보기 어려워 뺀다
+      .filter(w => w && w.length >= 2 && !STOP.test(w));
   }
   function matchOccs(text, fallbackDate, wide) {
     const today = T.now().date;
@@ -404,18 +531,30 @@
   async function remindFlow(t) {
     const today = T.now().date;
     const p = N.parse(t);
-    if (!p.start) return say('언제 알려 드릴까요? 예: “30분 뒤에 씻으라고 알려줘”, “오후 9시에 약 먹으라고 알려줘”');
-    let date = p.date || today;
-    if (!p.date && T.epoch(date, p.start) <= Date.now()) date = T.addDays(today, 1); // 이미 지난 시각이면 내일
-    const title = p.title || '알림';
-    const ev = await S.add({ title, date, start: p.start, category: p.category, priority: p.priority, repeat: p.repeat, reminders: [0], people: p.people });
-    const left = Math.max(0, Math.round((T.epoch(date, p.start) - Date.now()) / 6e4));
-    const when = `${T.relLabel(date).split(' · ')[0]} ${T.timeK(p.start)}`;
+    if (!p.start) return say('몇 시에 알려 드릴까요? 예: “7시에 씻으라고 해줘”, “30분 뒤에 숙제하라고 알려줘”');
+    const wake = /깨워|알람|기상/.test(t);
+    // 시각 후보: 오전/오후를 말하지 않았으면 두 시각 중 가장 가까운 앞으로의 시각 (깨워·알람은 아침 우선)
+    const ampmUnsaid = p.assumptions.some(a => /오전\/오후 표시가 없어/.test(a));
+    let starts = [p.start];
+    if (ampmUnsaid) {
+      const m = T.toMin(p.start), other = m >= 720 ? m - 720 : m + 720;
+      starts = wake ? [T.fromMin(Math.min(m, other))] : [p.start, T.fromMin(other)];
+    }
+    const days = p.date ? [p.date] : [today, T.addDays(today, 1)];
+    const cands = [];
+    days.forEach(d => starts.forEach(s => cands.push({ date: d, start: s, at: T.epoch(d, s) })));
+    const future = cands.filter(c => c.at > Date.now() - 30e3).sort((a, b) => a.at - b.at);
+    const pick = future[0] || cands.sort((a, b) => a.at - b.at)[0];
+    const { date, start } = pick;
+    const title = p.title || (wake ? '기상' : '알림');
+    const ev = await S.add({ title, date, start, category: p.category, priority: 'high', repeat: p.repeat, reminders: [0], people: p.people, alarm: true });
+    const left = Math.max(0, Math.round((T.epoch(date, start) - Date.now()) / 6e4));
+    const when = `${T.relLabel(date).split(' · ')[0]} ${T.timeK(start)}`;
     const leftTxt = left < 1 ? '곧' : left < 180 ? `${T.durK(left)} 뒤` : '';
-    say(`${when}${leftTxt ? `(${leftTxt})` : ''}에 ${qj(title, '을/를')} 알려 드릴게요.` +
+    say(`⏰ ${when}${leftTxt ? `(${leftTxt})` : ''}에 ${qj(title, '을/를')} 알람으로 알려 드릴게요.${p.repeat.freq !== 'none' ? ` (${esc(S.repeatLabel(p.repeat))} 반복)` : ''}` +
       (DF.push && DF.push.active ? '' : '<br><span class="muted small">앱을 닫아도 받으려면 알림을 허용해 주세요. 지금은 앱이 열려 있을 때만 알려 드려요.</span>') +
       card(`<div class="card-actions"><button class="btn ghost" data-act="undo">취소</button></div>`, {
-        undo: async c => { await S.remove(ev.id); resolveCard(c.dataset.card, '알림을 취소했어요'); }
+        undo: async c => { await S.remove(ev.id); resolveCard(c.dataset.card, '알람을 취소했어요'); }
       }));
   }
 
@@ -438,9 +577,45 @@
   }
 
   // ───────── 이동 ─────────
+  /** 일정마다 옮길 곳이 다른 경우의 확인 카드 */
+  function confirmMoves(occs, dest, label) {
+    const rows = occs.map(o => ({ o, to: dest(o) })).filter(x => x.to);
+    if (!rows.length) return say('옮길 수 있는 일정이 없어요. 시간이 정해진 일정만 시간을 옮길 수 있어요.');
+    say(`다음 일정을 옮길까요? ${esc(label)}` + card(`<div class="pick-list">${rows.map((x, i) => `<label class="pick"><input type="checkbox" data-pick="${i}" checked><span>${U.catDot(x.o.category)}<b>${esc(T.fmtDate(x.o.occDate))} ${esc(x.o.start || '미정')}</b> ${esc(x.o.title)} → <b>${esc(T.fmtDate(x.to.date))} ${esc(x.to.start || x.o.start || '')}</b></span></label>`).join('')}</div>
+      <div class="card-actions"><button class="btn ghost" data-act="cancel">취소</button><button class="btn primary" data-act="ok">옮기기</button></div>`, {
+      ok: async c => {
+        const sel = [...c.querySelectorAll('[data-pick]')].filter(i => i.checked).map(i => rows[+i.dataset.pick]);
+        for (const x of sel) await S.moveOcc(x.o, x.to.date, x.to.start);
+        resolveCard(c.dataset.card, `${sel.length}개 이동 완료`);
+        say(`${sel.length}개 일정을 옮겼어요.`);
+      },
+      cancel: c => resolveCard(c.dataset.card, '취소했어요')
+    }));
+  }
+
   function moveFlow(t) {
     const today = T.now().date;
+    // "주짓수 30분 뒤로 미뤄", "치과 1시간 당겨줘"
+    const sh = /(\d+)\s*(분|시간)\s*(반\s*)?(?:뒤로|후로|늦게|늦춰|미뤄|미루)|(\d+)\s*(분|시간)\s*(반\s*)?(?:앞으로|당겨|당기|일찍|빨리)/.exec(t);
+    if (sh) {
+      const later = !!sh[1];
+      const n = +(later ? sh[1] : sh[4]), unit = later ? sh[2] : sh[5], half = later ? sh[3] : sh[6];
+      const delta = (unit === '시간' ? n * 60 : n) + (half ? 30 : 0);
+      const { occs } = matchOccs(t.slice(0, sh.index), today);
+      const timed = occs.filter(o => o.start);
+      if (!timed.length) return say('시간을 옮길 일정을 찾지 못했어요. 시간이 정해진 일정 이름을 함께 말씀해 주세요.');
+      return confirmMoves(timed, o => {
+        const m = T.toMin(o.start) + (later ? delta : -delta);
+        return m >= 0 && m < 1440 ? { date: o.occDate, start: T.fromMin(m) } : null;
+      }, `(${later ? '' : '-'}${T.durK(delta)})`);
+    }
     const ds = N.findDates(t, today, { future: false }).found;
+    // "치과 다음 주로 미뤄줘" — 요일 없이 다음 주면 같은 요일로
+    if (/다음\s*주로|일주일\s*(뒤로|미뤄|후로)/.test(t) && !ds.some(d => /요일|욜/.test(d.text))) {
+      const { occs } = matchOccs(t.replace(/다음\s*주로.*$|일주일.*$/, ' '), today);
+      if (!occs.length) return say('옮길 일정을 찾지 못했어요. 일정 이름을 함께 말씀해 주세요.');
+      return confirmMoves(occs, o => ({ date: T.addDays(o.occDate, 7) }), '(일주일 뒤 같은 요일)');
+    }
     const toIdx = t.search(/(으로|로)\s*(옮|이동|미뤄|미루|연기|당겨|변경|바꿔)/);
     let target = null, source = null;
     if (ds.length >= 2) { source = ds[0]; target = ds[ds.length - 1]; }
@@ -538,6 +713,7 @@
     }
     const done = occs.filter(o => o.done).length;
     if (!occs.length) return say(`${esc(rg.label)}에는 ‘${esc(label)}’ 일정이 없어요.`);
+    if (label === '전체') return say(`${esc(rg.label)} 일정은 ${pastOnly ? '오늘까지 ' : ''}모두 ${occs.length}개예요 (반복 일정은 날마다 하나로 셈). 완료로 체크한 건 ${done}개예요.`);
     say(`${esc(rg.label)} ‘${esc(label)}’ 일정은 ${pastOnly ? '오늘까지 ' : ''}${occs.length}번이고, 그중 완료로 체크한 건 ${done}번이에요.${listHtml(occs.slice(-8), true)}`);
   }
   function busiest(t) {

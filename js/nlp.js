@@ -99,6 +99,11 @@
       const ms = T.addMonths(T.monthStart(today), off);
       return { from: ms, to: T.monthEnd(ms), label: m[0].replace(/\s+/g, ' ') };
     }
+    if ((m = /(?<![\d/])(\d{1,2})\s*월(?!\s*\d)/.exec(text)) && +m[1] >= 1 && +m[1] <= 12) {
+      const { y, m: cur } = T.ymd(today);
+      const ms = T.make(+m[1] < cur ? y + 1 : y, +m[1], 1);
+      return { from: ms, to: T.monthEnd(ms), label: `${+m[1]}월` };
+    }
     if ((m = /주말/.exec(text))) {
       const sat = T.dow(today) === 0 ? T.addDays(today, -1) : upcoming(today, 6);
       return { from: sat, to: T.addDays(sat, 1), label: '주말' };
@@ -176,13 +181,13 @@
     [/(\S*?)(가|와|봐|해|사|자|타|만나|먹어|읽어|써|배워|씻어|들어|챙겨|보내|받아|찍어)야\s*(?:해|돼|됨|함|한다|된다|겠다|지|겠어|할\s*듯)(?:요)?(?=[\s.!?~]|$).*$/, (m, stem, v) => stem + ({ 가: '가기', 와: '오기', 봐: '보기', 해: '하기', 사: '사기', 자: '자기', 타: '타기', 만나: '만나기', 먹어: '먹기', 읽어: '읽기', 써: '쓰기', 배워: '배우기', 씻어: '씻기', 들어: '듣기', 챙겨: '챙기기', 보내: '보내기', 받아: '받기', 찍어: '찍기' }[v])],
     [/(\S+?)기로\s*(?:했|함|하|약속).*$/, (m, stem) => stem + '기'],
     [/(할|갈|볼|먹을|만날)\s*(?:거야|거예요|거임|예정|계획).*$/, (m, v) => ({ 할: '하기', 갈: '가기', 볼: '보기', 먹을: '먹기', 만날: '만나기' }[v])],
-    [/\s*(?:이|가)?\s*(?:있어|있음|있다|있어요|있습니다|잡혔어|잡혔다|생겼어|생겼다)[.!?~]*$/, () => ''],
+    [/\s*(?:있어|있음|있다|있어요|있습니다|잡혔어|잡혔다|생겼어|생겼다)[.!?~]*$/, () => ''],
     [/\s*(?:해요|합니다|함|해)[.!?~]*$/, () => '']
   ];
   function cleanTitle(s) {
     s = s
       .replace(/(?:일정\s*)?(?:으로|로)?\s*(?:추가|등록|저장|잡아|넣어|기록)(?:\s*(?:해\s*줘|해줘|해\s*주세요|해주세요|해\s*줄래|해|줘|좀|줄래))*[.!?~\s]*$/, ' ')
-      .replace(/(?:알림|알려\s*줘|알려줘|알려\s*주세요|깨워\s*줘|깨워줘|깨워|말해\s*줘|리마인드)\s*(?:설정|맞춰\s*줘|맞춰줘|해\s*줘|해줘)?/g, ' ')
+      .replace(/(?:알림|알람|알려\s*줘|알려줘|알려\s*주세요|깨워\s*줘|깨워줘|깨워|말해\s*줘|리마인드)\s*(?:설정|맞춰\s*줘|맞춰줘|맞춰|켜\s*줘|켜줘|해\s*줘|해줘)?/g, ' ')
       .replace(/(?:^|\s)(?:좀|일정|스케줄|그리고|그날|에는|에|엔|은|는|부터|까지|쯤|경|정도|동안)(?=\s|$)/g, ' ')
       .replace(/\s+/g, ' ').trim()
       .replace(/^(?:에는|에|엔|은|는|이랑|랑)\s+/, '');
@@ -249,7 +254,7 @@
       if ((m = re.exec(work))) {
         const v = fn(m);
         r.repeat = { freq: v.freq };
-        if (v.date) r.date = v.date;
+        r.date = v.date || today; // 반복 일정인데 날짜가 없으면 오늘부터
         work = mask(work, m.index, m[0].length);
         break;
       }
@@ -348,7 +353,14 @@
 
     // 9) 제목
     r.title = cleanTitle(work);
-    if (!r.title && /깨워/.test(text)) r.title = '기상';
+    if (!r.title && /깨워|알람/.test(text)) r.title = /알람/.test(text) ? '알람' : '기상';
+    // 제목 끝에 붙은 조사 '이/가' 떼기 ("시험이 있어" → 시험). '수행평가'처럼 '가'로 끝나는 말은 남긴다
+    if (/\S(이|가)$/.test(r.title) && /(있어|있음|있다|잡혔|생겼)/.test(text)) {
+      const base = r.title.slice(0, -1), code = base.slice(-1).charCodeAt(0) - 0xac00;
+      const batchim = code >= 0 && code < 11172 && code % 28 !== 0;
+      const keep = /(평가|휴가|물가|작가|화가|축가|국가|대가)$/.test(r.title);
+      if (r.title.endsWith('이') ? batchim : (!batchim && !keep)) r.title = base;
+    }
     if (r.date && opts.future !== false && r.date < today && r.repeat.freq === 'none') r.assumptions.push('지난 날짜예요. 맞는지 확인해 주세요.');
     if (!r.title) r.missing.push('title');
     if (!r.date) r.missing.push('date');

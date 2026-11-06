@@ -11,6 +11,37 @@
   let reg = null, handlers = {}, timer = null, ticking = false;
   const inbox = []; // 앱 안 알림 기록
 
+  /** 일정 알림 문구 (앱 안 알림과 푸시 서버가 같이 쓴다) */
+  function message(o, min) {
+    if (o.alarm) return { title: `⏰ ${o.title}`, body: `${T.timeK(o.start)} 알람이에요.${o.location ? ' · ' + o.location : ''}`, important: true };
+    const lead = min === 0 ? '지금 시작해요' : `${T.durK(min)} 뒤 시작`;
+    return {
+      title: `${o.priority === 'high' ? '[중요] ' : ''}${o.title}`,
+      body: `${T.timeK(o.start)} · ${lead}${o.location ? ' · ' + o.location : ''}`,
+      important: o.priority === 'high'
+    };
+  }
+
+  // 앱이 열려 있을 때 알람 소리 (짧은 삐삐삐 세 번)
+  function beep() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      [0, 0.35, 0.7].forEach(t => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.25);
+        o.connect(g).connect(ctx.destination);
+        o.start(ctx.currentTime + t);
+        o.stop(ctx.currentTime + t + 0.3);
+      });
+      setTimeout(() => ctx.close(), 1500);
+    } catch (e) { /* 소리를 못 내도 알림은 그대로 */ }
+  }
+
   function permission() { return supported ? Notification.permission : 'unsupported'; }
   async function request() {
     if (!supported) return 'unsupported';
@@ -22,6 +53,7 @@
     const tag = opts.tag || title;
     if (!inbox.some(x => x.tag === tag)) inbox.unshift({ title, body, tag, at: Date.now(), important: !!opts.important });
     inbox.splice(30);
+    if (opts.alarm && document.visibilityState === 'visible') beep();
     let system = false;
     // 푸시 서버가 같은 알림을 보내므로, 예약 알림은 앱 안에서만 보여 준다 (중복 방지)
     const viaPush = opts.scheduled && DF.push && DF.push.active;
@@ -62,8 +94,8 @@
           const fireTs = startTs - min * 6e4;
           if (sent[key] || nowTs < fireTs || nowTs > startTs + 5 * 6e4) continue;
           sent[key] = nowTs; changed = true;
-          const lead = min === 0 ? '지금 시작해요' : `${T.durK(min)} 뒤 시작`;
-          await show(`${o.priority === 'high' ? '[중요] ' : ''}${o.title}`, `${T.timeK(o.start)} · ${lead}${o.location ? ' · ' + o.location : ''}`, { tag: key, important: o.priority === 'high', scheduled: true });
+          const m = message(o, min);
+          await show(m.title, m.body, { tag: key, important: m.important, alarm: o.alarm, scheduled: true });
         }
       }
 
@@ -113,5 +145,5 @@
     setTimeout(tick, 1500);
   }
 
-  DF.notify = { supported, permission, request, show, start, tick, inbox };
+  DF.notify = { supported, permission, request, show, start, tick, inbox, message };
 })(window.DF = window.DF || {});

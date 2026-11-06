@@ -56,12 +56,8 @@
       o.reminders.forEach(min => {
         const at = startTs - min * 6e4;
         if (at <= nowTs) return;
-        const lead = min === 0 ? '지금 시작해요' : `${T.durK(min)} 뒤 시작`;
-        items.push({
-          at, tag: `${o.key}#${min}#${o.start}`, important: o.priority === 'high', url: '#/today',
-          title: `${o.priority === 'high' ? '[중요] ' : ''}${o.title}`,
-          body: `${T.timeK(o.start)} · ${lead}${o.location ? ' · ' + o.location : ''}`
-        });
+        const m = DF.notify.message(o, min);
+        items.push({ at, tag: `${o.key}#${min}#${o.start}`, important: m.important, url: '#/today', title: m.title, body: m.body });
       });
     });
     // 아침 브리핑·저녁 마감
