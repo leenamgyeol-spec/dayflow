@@ -339,8 +339,6 @@ input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
 }
 @media (max-width: 820px) {
   body { font-size: 15px; }
-  /* iPhone은 글자가 16px보다 작은 입력칸을 누르면 화면을 확대한다 → 입력칸은 16px */
-  input:not([type=checkbox]):not([type=radio]), select, textarea, .chat-input input, .nl-input input { font-size: 16px !important; }
   .sidebar { display: none; }
   .view { padding: 18px 16px calc(96px + env(safe-area-inset-bottom)); }
   .tabbar {
@@ -408,3 +406,6 @@ html, body { touch-action: manipulation; }
 .interval input { width: 72px !important; text-align: center; }
 .interval em { font-style: normal; font-size: 14px; color: var(--text-2); }
 .interval small { margin-left: auto; font-size: 12px; }
+/* iPhone은 글자가 16px보다 작은 입력칸을 누르면 화면을 확대한다 → 화면 폭과 상관없이 입력칸은 16px
+   (가로로 눕힌 iPhone은 820px보다 넓어서 휴대폰용 규칙만으로는 부족하다) */
+input:not([type=checkbox]):not([type=radio]), select, textarea { font-size: 16px !important; }

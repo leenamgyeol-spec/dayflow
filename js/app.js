@@ -10,6 +10,21 @@
   ];
   const view = () => document.getElementById('view');
   let current = null, weather = null, clockTimer = null;
+  // 지금 실행 중인 버전 (index.html이 붙인 ?v=번호)
+  const VERSION = ((document.querySelector('script[src*="js/app.js"]') || {}).src || '').replace(/^.*[?&]v=(\d+).*$/, '$1') || '?';
+
+  /** 홈 화면 앱은 완전히 닫지 않으면 예전 화면이 남는다 → 다시 볼 때마다 새 버전이 있는지 보고 있으면 새로고침 */
+  async function checkUpdate() {
+    if (document.visibilityState !== 'visible' || document.querySelector('.modal-wrap') || VERSION === '?') return;
+    if (document.activeElement && document.activeElement.matches('input, textarea')) return; // 입력 중에는 건드리지 않는다
+    try {
+      const html = await (await fetch('index.html?check=' + Date.now(), { cache: 'no-store' })).text();
+      const m = /js\/app\.js\?v=(\d+)/.exec(html);
+      if (m && +m[1] > +VERSION) location.reload();
+    } catch (e) { /* 오프라인이면 다음에 */ }
+  }
+  document.addEventListener('visibilitychange', checkUpdate);
+  setInterval(checkUpdate, 30 * 6e4);
   const cal = { mode: 'month', anchor: null, selected: null };
 
   // ───────── 공통 ─────────
@@ -412,7 +427,7 @@
         <p class="group-label danger-text">위험 구역</p>
         <button class="btn sm danger" data-wipe>${icon('trash', 15)} 모든 일정 삭제</button>
       </section>
-      <p class="center muted small">DAYFLOW · 당신의 하루를 기억하고, 더 나은 하루를 설계합니다.<br>시간대: 한국 표준시(Asia/Seoul) · 날씨 제공: Open-Meteo</p>`;
+      <p class="center muted small">DAYFLOW · 당신의 하루를 기억하고, 더 나은 하루를 설계합니다.<br>시간대: 한국 표준시(Asia/Seoul) · 날씨 제공: Open-Meteo<br>버전 ${esc(VERSION)}</p>`;
     bindHeader();
     const $ = s => view().querySelector(s);
     const saveField = async patch => { await S.saveSettings(patch); applyTheme(); U.toast('저장했어요.'); };
