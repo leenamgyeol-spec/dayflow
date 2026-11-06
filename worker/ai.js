@@ -4,7 +4,7 @@
  * (추가는 바로, 변경·삭제·완료는 사용자 확인 뒤). */
 import Anthropic from '@anthropic-ai/sdk';
 
-const MODEL = 'claude-opus-5-5';
+const MODEL = 'claude-haiku-5-5'; // 비용을 낮추려고 Haiku 사용 (사용자 선택)
 const CATEGORIES = ['학교', '공부', '운동', '개인 약속', '가족', '취미', '기타'];
 
 const SYSTEM = `너는 DAYFLOW라는 개인 일정 앱의 비서다. 사용자는 한국에 사는 학생이고, 시간대는 항상 한국 시간(Asia/Seoul)이다.
@@ -97,11 +97,9 @@ export async function chat(env, { history, context, message }) {
   while (messages.length && messages[0].role !== 'user') messages.shift();
   messages.push({ role: 'user', content: `${String(context).slice(0, 60000)}\n\n[사용자]\n${String(message).slice(0, 2000)}` });
 
-  const res = await client(env).beta.messages.create({
+  const res = await client(env).messages.create({
     model: MODEL,
     max_tokens: 4000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
     output_config: { effort: 'low' },
     cache_control: { type: 'ephemeral' },
     system: SYSTEM,
@@ -124,11 +122,9 @@ export async function morningBrief(env, { date, dow, events, weather, name }) {
     `위 데이터만으로 아침 브리핑을 써 줘. 형식:\n첫 줄: 알림에 그대로 뜰 한 문장 요약 (40자 안팎)\n빈 줄\n` +
     `그다음 5~9줄: 오늘 일정 흐름, 가장 신경 쓸 일정, 일정 사이 빈 시간과 쉬기 좋은 때, 미리 챙길 것(날씨 포함), 마지막에 자연스러운 한마디. ` +
     `일정이 없으면 여유로운 날이라고만 하고 일정을 지어내지 마. 줄마다 "· "로 시작하고, 마크다운은 쓰지 마.`;
-  const res = await client(env).beta.messages.create({
+  const res = await client(env).messages.create({
     model: MODEL,
     max_tokens: 2000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
     output_config: { effort: 'low' },
     system: SYSTEM,
     messages: [{ role: 'user', content: prompt }]
