@@ -151,8 +151,8 @@
       <div class="field full interval-field" data-interval-wrap ${d.repeat && ['daily', 'weekly', 'monthly'].includes(d.repeat.freq) ? '' : 'hidden'}><span>간격</span>
         <label class="interval"><input type="number" name="interval" min="1" max="52" inputmode="numeric" value="${esc((d.repeat && d.repeat.interval) || 1)}"><em data-interval-unit>${{ daily: '일', weekly: '주', monthly: '달' }[(d.repeat && d.repeat.freq)] || '주'}마다</em><small class="muted">2주마다 = 격주</small></label></div>
       <div class="field full" data-days-wrap ${d.repeat && d.repeat.freq === 'weekly' ? '' : 'hidden'}><span>반복할 요일</span><div class="chips" data-days>
-        ${[1, 2, 3, 4, 5, 6, 0].map(n => { const on = d.repeat && d.repeat.days ? d.repeat.days.includes(n) : T.isDate(d.date) && T.dow(d.date) === n; return `<label class="chip-check"><input type="checkbox" value="${n}" ${on ? 'checked' : ''}><span>${T.DOW[n]}</span></label>`; }).join('')}
-      </div></div>
+        ${[1, 2, 3, 4, 5, 6, 0].map(n => { const on = !!(d.repeat && d.repeat.days && d.repeat.days.includes(n)); return `<label class="chip-check"><input type="checkbox" value="${n}" ${on ? 'checked' : ''}><span>${T.DOW[n]}</span></label>`; }).join('')}
+      </div><small class="muted" data-days-hint>요일을 고르지 않으면 시작 날짜의 요일${T.isDate(d.date) ? `(${T.DOW[T.dow(d.date)]})` : ''}마다 반복해요.</small></div>
       <div class="field full"><span>알림</span><div class="chips" data-reminders>
         ${REMINDER_OPTS.map(([v, l]) => `<label class="chip-check"><input type="checkbox" value="${v}" ${rem.includes(v) ? 'checked' : ''}><span>${l}</span></label>`).join('')}
         <label class="chip-input"><input type="number" min="1" max="10080" name="customRem" placeholder="직접(분)" value="${custom[0] || ''}"><span>분 전</span></label>
@@ -163,6 +163,12 @@
   }
   // 폼 안에서 반복을 '매주'로 고르면 요일 선택을 보여 준다
   document.addEventListener('change', e => {
+    // 시작 날짜를 바꾸면 "요일을 안 고르면 ○요일마다" 안내도 바꾼다
+    if (e.target.matches('[data-form] [name="date"]')) {
+      const hint = e.target.closest('[data-form]').querySelector('[data-days-hint]');
+      if (hint && T.isDate(e.target.value)) hint.textContent = `요일을 고르지 않으면 시작 날짜의 요일(${T.DOW[T.dow(e.target.value)]})마다 반복해요.`;
+      return;
+    }
     if (!e.target.matches('[data-form] [name="repeat"]')) return;
     const f = e.target.closest('[data-form]'), v = e.target.value;
     const w = f.querySelector('[data-days-wrap]');
@@ -195,7 +201,6 @@
     if (d.end && !d.start) return '종료 시간만 있을 수는 없어요. 시작 시간을 입력해 주세요.';
     if (d.start && d.end && T.toMin(d.end) <= T.toMin(d.start)) return '종료 시간이 시작 시간보다 늦어야 해요.';
     if (d.repeat && d.repeat.until && d.repeat.until < d.date) return '반복 종료일이 시작 날짜보다 빨라요.';
-    if (d.repeat && d.repeat.freq === 'weekly' && d.repeat.days && !d.repeat.days.length) return '반복할 요일을 하나 이상 골라 주세요.';
     if (d.endDate && !T.isDate(d.endDate)) return '끝나는 날을 확인해 주세요.';
     if (d.endDate && d.endDate < d.date) return '끝나는 날이 시작일보다 빨라요.';
     if (d.endDate && T.diff(d.date, d.endDate) > 366) return '여러 날 일정은 1년까지만 만들 수 있어요.';
