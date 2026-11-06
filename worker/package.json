@@ -1,0 +1,12 @@
+{
+  "name": "dayflow-push",
+  "version": "1.0.0",
+  "description": "DAYFLOW 푸시·AI 서버",
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0"
+  },
+  "private": true
+}

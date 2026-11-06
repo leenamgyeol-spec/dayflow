@@ -68,7 +68,7 @@
   const bullet = items => `<ul class="plain">${items.map(i => `<li>${i}</li>`).join('')}</ul>`;
 
   // ───────── 렌더링 ─────────
-  const SUGGEST = ['내일 일정 알려줘', '이번 주에 가장 바쁜 날은?', '오늘 가장 먼저 준비할 건?', '이번 달에 운동 몇 번 했어?', '다음 주 월요일 오후 3시 병원 예약 추가해 줘', '오늘 빈 시간 알려줘'];
+  const SUGGEST = ['30분 뒤에 씻으라고 알려줘', '내일 일정 알려줘', '이번 주에 가장 바쁜 날은?', '오늘 가장 먼저 준비할 건?', '이번 달에 운동 몇 번 했어?', '다음 주 월요일 오후 3시 병원 예약 추가해 줘', '오늘 빈 시간 알려줘'];
   function mount(el) {
     root = el;
     root.innerHTML = `
@@ -120,6 +120,8 @@
     push('me', esc(text));
     try {
       if (evening && evening.waiting && !/^(아침\s*브리핑|하루\s*마감\s*시작)$/.test(text)) return await eveningReply(text);
+      const it = intent(text);
+      if (it !== 'briefing' && it !== 'evening' && await aiFlow(text)) return;
       await route(text);
     } catch (e) {
       console.error(e);
@@ -130,6 +132,9 @@
   function intent(t) {
     if (/브리핑/.test(t)) return 'briefing';
     if (/하루\s*마감|마감\s*시작|하루\s*정리|오늘\s*정리|회고/.test(t)) return 'evening';
+    // "1분 뒤에 씻으라고 알려줘", "7시에 깨워줘", "10시에 알림 맞춰줘"
+    const relTime = /\d+\s*(분|시간)\s*(반\s*)?(뒤|후|있다가|이따)/.test(t);
+    if (/라고\s*(좀\s*)?(알려|말해|해\s*줘)|깨워|알림\s*(맞춰|설정|해\s*줘|해줘)|리마인드/.test(t) || (relTime && /알려|알림/.test(t))) return 'remind';
     if (/(옮겨|옮기|이동|미뤄|미루|연기|당겨|변경해|바꿔)/.test(t) && !/추가/.test(t)) return 'move';
     if (/(삭제|지워|지우|없애|빼\s*줘|취소)/.test(t) && !/추가/.test(t)) return 'delete';
     if (/(완료|끝냈|끝났|다\s*했|마쳤|했어\s*$|했음\s*$)/.test(t) && !/몇|얼마/.test(t) && !/추가/.test(t)) return 'complete';
@@ -151,6 +156,7 @@
     switch (intent(t)) {
       case 'briefing': return briefing();
       case 'evening': return startEvening();
+      case 'remind': return remindFlow(t);
       case 'add': return addFlow(t);
       case 'query': return query(t);
       case 'move': return moveFlow(t);
@@ -211,9 +217,16 @@
 
   // ───────── 브리핑 ─────────
   async function briefing(date) {
+    date = date || T.now().date;
+    const ai = DF.push ? await DF.push.brief(date) : null;
+    if (ai) return say(aiBriefHtml(ai));
     const w = await DF.weather.get().catch(() => null);
-    const b = B.morning(date || T.now().date, w);
-    say(briefingHtml(b));
+    say(briefingHtml(B.morning(date, w)));
+  }
+  /** Claude가 쓴 아침 브리핑 */
+  function aiBriefHtml(ai) {
+    const lines = String(ai.body || '').split('\n').map(l => l.trim()).filter(Boolean);
+    return `<p><b>${esc(ai.summary)}</b></p>${lines.length ? `<ul class="plain">${lines.map(l => `<li>${esc(l.replace(/^[·•\-]\s*/, ''))}</li>`).join('')}</ul>` : ''}`;
   }
   function briefingHtml(b) {
     let h = `<p><b>${esc(b.greet)}</b>${b.weatherLine ? ' ' + esc(b.weatherLine) : ''}</p>`;
@@ -263,6 +276,147 @@
       return say(`날짜가 없어서 일단 오늘로 채웠어요. 날짜가 다르면 아래에서 바꿔 주세요.${draftCard(p)}`);
     }
     say(draftCard(p));
+  }
+
+  // ───────── Claude 비서 ─────────
+  let aiOff = false; // 키가 없거나 기기 제한이면 이번 실행 동안은 기본 비서로만
+  function plain(html) {
+    const d = document.createElement('div');
+    d.innerHTML = html;
+    d.querySelectorAll('.card-inline').forEach(c => c.remove());
+    return d.textContent.replace(/\s+/g, ' ').trim();
+  }
+  /** Claude에게 보낼 [지금]·[일정] 데이터 */
+  function aiContext() {
+    const n = T.now();
+    const line = e => [e.id, e.date + (e.endDate ? '~' + e.endDate : ''), (e.start || '미정') + (e.end ? '-' + e.end : ''), e.title, e.location || '-', e.category, e.priority,
+      S.isSeries(e) ? (e.endDate ? '여러 날' : S.repeatLabel(e.repeat)) + (e.repeat.until ? ` (~${e.repeat.until})` : '') : '한 번',
+      !S.isSeries(e) && e.done ? '완료' : ''].join(' | ');
+    const from = T.addDays(n.date, -21), to = T.addDays(n.date, 45);
+    const last = e => e.endDate || (e.repeat.freq !== 'none' ? (e.repeat.until || '9999-12-31') : e.date);
+    const all = S.all().filter(e => last(e) >= from && e.date <= to);
+    const byDay = T.range(from, to).map(d => {
+      const occ = S.on(d);
+      return occ.length ? `${d}(${T.DOW[T.dow(d)]}): ` + occ.map(o => `${o.start || '미정'} ${o.title}[${o.id}]${o.done ? '✓' : ''}`).join(', ') : null;
+    }).filter(Boolean);
+    return `[지금] ${n.date} (${T.DOW[n.dow]}) ${n.time}\n[사용자] ${S.settings.name || '(이름 없음)'}\n` +
+      `[일정 목록] id | 날짜 | 시간 | 제목 | 장소 | 분류 | 중요도 | 반복 | 완료\n${all.map(line).join('\n') || '(없음)'}\n` +
+      `[날짜별 일정 ${from}~${to}] (✓=완료)\n${byDay.join('\n') || '(없음)'}`;
+  }
+  /** Claude로 처리했으면 true, 쓸 수 없으면 false (기본 비서로 넘김) */
+  async function aiFlow(text) {
+    if (aiOff || !DF.push || !navigator.onLine) return false;
+    const history = messages.slice(-11, -1).map(m => ({ role: m.role === 'me' ? 'user' : 'assistant', text: plain(m.html) })).filter(h => h.text);
+    const typing = document.createElement('div');
+    typing.className = 'msg ai typing';
+    typing.innerHTML = `<div class="avatar ai">${icon('spark', 14)}</div><div class="bubble"><span class="dots"><i></i><i></i><i></i></span></div>`;
+    const log = root && root.querySelector('#chat-log');
+    if (log) { log.appendChild(typing); log.scrollTop = log.scrollHeight; }
+    let r;
+    try {
+      r = await DF.push.call('/ai', { message: text, history, context: aiContext() });
+    } catch (e) {
+      typing.remove();
+      if (['no_key', 'device_limit', 'forbidden'].includes(e.code)) aiOff = true;
+      else if (e.code === 'daily_limit') say(esc(e.message) + ' 지금은 기본 비서로 답할게요.');
+      return false;
+    }
+    typing.remove();
+    const added = [], confirms = [];
+    for (const a of r.actions || []) {
+      if (a.name === 'add_event') added.push(await aiAdd(a.input));
+      else confirms.push(a);
+    }
+    let html = esc(r.text || '').replace(/\n/g, '<br>');
+    const ok = added.filter(Boolean);
+    if (ok.length) {
+      html += listHtml(ok.map(ev => S.on(ev.date).find(o => o.id === ev.id) || Object.assign({}, ev, { occDate: ev.date, key: ev.id + '@' + ev.date })), true);
+      html += card(`<div class="card-actions"><button class="btn ghost" data-act="undo">추가 취소</button></div>`, {
+        undo: async c => { for (const ev of ok) await S.remove(ev.id); resolveCard(c.dataset.card, '추가를 취소했어요'); }
+      });
+    }
+    if (added.length > ok.length) html += '<br><span class="muted small">일부 일정은 정보가 맞지 않아 추가하지 못했어요.</span>';
+    confirms.forEach(a => { html += aiConfirmCard(a); });
+    say(html || '네.');
+    return true;
+  }
+  async function aiAdd(x) {
+    const d = {
+      title: x.title, date: x.date, endDate: x.end_date || null, start: x.start || null, end: x.end || null, location: x.location || '',
+      category: x.category, priority: x.priority, repeat: { freq: x.repeat_freq || 'none', days: x.repeat_days || null, until: x.repeat_until || null },
+      reminders: Array.isArray(x.reminder_minutes) ? x.reminder_minutes : []
+    };
+    if (U.validate(d)) return null;
+    return S.add(d);
+  }
+  /** 바꾸기·지우기·완료는 확인 버튼을 눌러야 반영한다 */
+  function aiConfirmCard(a) {
+    const x = a.input || {};
+    const ev = S.get(x.event_id);
+    if (!ev) return '';
+    const day = x.occurrence_date && S.isSeries(ev) ? x.occurrence_date : null;
+    const what = `<b>${esc(ev.title)}</b> ${day ? `(${esc(T.fmtDate(day))})` : S.isSeries(ev) ? '(모든 날)' : `(${esc(T.fmtDate(ev.date))})`}`;
+    let desc, run;
+    if (a.name === 'delete_event') {
+      desc = `${what} 삭제`;
+      run = () => (day ? S.skipOcc({ id: ev.id, occDate: day }) : S.remove(ev.id));
+    } else if (a.name === 'set_done') {
+      desc = `${what} ${x.done ? '완료로 표시' : '완료 취소'}`;
+      const occDate = x.occurrence_date || ev.date;
+      run = () => S.setDone({ id: ev.id, occDate }, !!x.done);
+    } else if (a.name === 'change_event') {
+      const parts = [];
+      if (x.date) parts.push(`날짜 → ${T.fmtDate(x.date)}`);
+      if (x.start) parts.push(`시작 → ${x.start}`);
+      if (x.end) parts.push(`종료 → ${x.end}`);
+      if (x.title) parts.push(`제목 → ${x.title}`);
+      if (x.location) parts.push(`장소 → ${x.location}`);
+      if (x.priority) parts.push(`중요도 → ${S.PRIORITY[x.priority] || x.priority}`);
+      if (!parts.length) return '';
+      desc = `${what}: ${esc(parts.join(', '))}`;
+      run = async () => {
+        let target = ev;
+        if (day && (x.date || x.start)) target = await S.moveOcc({ id: ev.id, occDate: day }, x.date || day, x.start || undefined);
+        else if (x.date || x.start) {
+          const patch = {};
+          if (x.date) patch.date = x.date;
+          if (x.start) {
+            patch.start = x.start;
+            if (!x.end && ev.start && ev.end) patch.end = T.fromMin(T.toMin(x.start) + T.toMin(ev.end) - T.toMin(ev.start));
+          }
+          target = await S.update(ev.id, patch);
+        }
+        const rest = {};
+        if (x.end) rest.end = x.end;
+        if (x.title) rest.title = x.title;
+        if (x.location) rest.location = x.location;
+        if (x.priority) rest.priority = x.priority;
+        if (Object.keys(rest).length && target) await S.update(target.id, rest);
+      };
+    } else return '';
+    return card(`<p class="card-title">${desc}</p><div class="card-actions"><button class="btn ghost" data-act="cancel">취소</button><button class="btn ${a.name === 'delete_event' ? 'danger' : 'primary'}" data-act="ok">확인</button></div>`, {
+      ok: async c => { await run(); resolveCard(c.dataset.card, '반영했어요'); },
+      cancel: c => resolveCard(c.dataset.card, '취소했어요')
+    });
+  }
+
+  // ───────── 알려 주기 (바로 등록) ─────────
+  async function remindFlow(t) {
+    const today = T.now().date;
+    const p = N.parse(t);
+    if (!p.start) return say('언제 알려 드릴까요? 예: “30분 뒤에 씻으라고 알려줘”, “오후 9시에 약 먹으라고 알려줘”');
+    let date = p.date || today;
+    if (!p.date && T.epoch(date, p.start) <= Date.now()) date = T.addDays(today, 1); // 이미 지난 시각이면 내일
+    const title = p.title || '알림';
+    const ev = await S.add({ title, date, start: p.start, category: p.category, priority: p.priority, repeat: p.repeat, reminders: [0], people: p.people });
+    const left = Math.max(0, Math.round((T.epoch(date, p.start) - Date.now()) / 6e4));
+    const when = `${T.relLabel(date).split(' · ')[0]} ${T.timeK(p.start)}`;
+    const leftTxt = left < 1 ? '곧' : left < 180 ? `${T.durK(left)} 뒤` : '';
+    say(`${when}${leftTxt ? `(${leftTxt})` : ''}에 ${qj(title, '을/를')} 알려 드릴게요.` +
+      (DF.push && DF.push.active ? '' : '<br><span class="muted small">앱을 닫아도 받으려면 알림을 허용해 주세요. 지금은 앱이 열려 있을 때만 알려 드려요.</span>') +
+      card(`<div class="card-actions"><button class="btn ghost" data-act="undo">취소</button></div>`, {
+        undo: async c => { await S.remove(ev.id); resolveCard(c.dataset.card, '알림을 취소했어요'); }
+      }));
   }
 
   // ───────── 조회 ─────────
@@ -586,5 +740,5 @@
   // 다른 화면에서 일정이 바뀌면 카드 안 목록도 다시 그림 (상태 표시만)
   function onEventsChanged() { /* 기록된 메시지는 당시 상태 그대로 둔다 */ }
 
-  DF.chat = { load, mount, handle, briefing, briefingHtml, startEvening, clear, onEventsChanged, intent, get evening() { return evening; } };
+  DF.chat = { load, mount, handle, briefing, briefingHtml, aiBriefHtml, startEvening, clear, onEventsChanged, intent, get evening() { return evening; } };
 })(window.DF = window.DF || {});

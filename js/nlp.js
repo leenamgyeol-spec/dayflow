@@ -172,6 +172,7 @@
 
   // ───────── 제목 다듬기 ─────────
   const VERB_ENDINGS = [
+    [/(\S+?)(?:으)?라고(?:\s.*)?$/, (m, stem) => stem + '기'],
     [/(\S*?)(가|와|봐|해|사|자|타|만나|먹어|읽어|써|배워|씻어|들어|챙겨|보내|받아|찍어)야\s*(?:해|돼|됨|함|한다|된다|겠다|지|겠어|할\s*듯)(?:요)?(?=[\s.!?~]|$).*$/, (m, stem, v) => stem + ({ 가: '가기', 와: '오기', 봐: '보기', 해: '하기', 사: '사기', 자: '자기', 타: '타기', 만나: '만나기', 먹어: '먹기', 읽어: '읽기', 써: '쓰기', 배워: '배우기', 씻어: '씻기', 들어: '듣기', 챙겨: '챙기기', 보내: '보내기', 받아: '받기', 찍어: '찍기' }[v])],
     [/(\S+?)기로\s*(?:했|함|하|약속).*$/, (m, stem) => stem + '기'],
     [/(할|갈|볼|먹을|만날)\s*(?:거야|거예요|거임|예정|계획).*$/, (m, v) => ({ 할: '하기', 갈: '가기', 볼: '보기', 먹을: '먹기', 만날: '만나기' }[v])],
@@ -181,7 +182,7 @@
   function cleanTitle(s) {
     s = s
       .replace(/(?:일정\s*)?(?:으로|로)?\s*(?:추가|등록|저장|잡아|넣어|기록)(?:\s*(?:해\s*줘|해줘|해\s*주세요|해주세요|해\s*줄래|해|줘|좀|줄래))*[.!?~\s]*$/, ' ')
-      .replace(/(?:알림|알려\s*줘|알려줘)\s*(?:설정|해\s*줘|해줘)?/g, ' ')
+      .replace(/(?:알림|알려\s*줘|알려줘|알려\s*주세요|깨워\s*줘|깨워줘|깨워|말해\s*줘|리마인드)\s*(?:설정|맞춰\s*줘|맞춰줘|해\s*줘|해줘)?/g, ' ')
       .replace(/(?:^|\s)(?:좀|일정|스케줄|그리고|그날|에는|에|엔|은|는|부터|까지|쯤|경|정도|동안)(?=\s|$)/g, ' ')
       .replace(/\s+/g, ' ').trim()
       .replace(/^(?:에는|에|엔|은|는|이랑|랑)\s+/, '');
@@ -254,6 +255,20 @@
       }
     }
 
+    // 2-1) 지금부터 상대 시간: "1분 뒤", "30분 후", "2시간 있다가", "1시간 반 뒤"
+    const relRe = /(?:(\d+)\s*시간\s*(반)?\s*)?(?:(\d+)\s*분\s*)?(?:뒤|후|있다가|이따가?)/g;
+    while ((m = relRe.exec(work))) {
+      if (!m[1] && !m[3]) { if (!m[0].length) relRe.lastIndex++; continue; }
+      const n = T.now();
+      const delta = (+m[1] || 0) * 60 + (m[2] ? 30 : 0) + (+m[3] || 0);
+      const total = Math.round(n.minutes + n.s / 60 + delta);
+      r.date = T.addDays(n.date, Math.floor(total / 1440));
+      r.start = T.fromMin(total % 1440);
+      r.relative = true;
+      work = mask(work, m.index, m[0].length);
+      break;
+    }
+
     // 3) 날짜 — 여러 날 일정도 함께 본다: "12월 1일부터 12월 9일까지", "12/1~12/9", "월요일부터 수요일까지", "3박 4일", "5일 동안"
     const future = opts.future !== false;
     let spanDays = null;
@@ -306,7 +321,7 @@
     }
 
     // 5) 시간
-    const tm = findTime(work);
+    const tm = r.start ? null : findTime(work);
     if (tm) {
       r.start = tm.start; r.end = tm.end;
       if (tm.assumed) r.assumptions.push(`오전/오후 표시가 없어 ${josa(T.timeK(tm.start), '으로/로')} 이해했어요.`);
@@ -333,6 +348,7 @@
 
     // 9) 제목
     r.title = cleanTitle(work);
+    if (!r.title && /깨워/.test(text)) r.title = '기상';
     if (r.date && opts.future !== false && r.date < today && r.repeat.freq === 'none') r.assumptions.push('지난 날짜예요. 맞는지 확인해 주세요.');
     if (!r.title) r.missing.push('title');
     if (!r.date) r.missing.push('date');

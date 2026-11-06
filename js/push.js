@@ -93,6 +93,21 @@
     return items.sort((a, b) => a.at - b.at);
   }
 
+  /** 날짜별 일정 요약 (서버가 아침 브리핑을 쓸 때 쓴다) */
+  function dayEvents(date) {
+    return S.on(date).map(o => ({ title: o.title, start: o.start, end: o.end, location: o.location, priority: o.priority }));
+  }
+  function place() {
+    const city = DF.weather.CITIES[S.settings.city] ? S.settings.city : '서울';
+    const [lat, lon] = DF.weather.CITIES[city];
+    return { lat, lon, city };
+  }
+  function days() {
+    const out = {}, n = T.now();
+    T.range(n.date, T.addDays(n.date, DAYS - 1)).forEach(d => { out[d] = dayEvents(d); });
+    return out;
+  }
+
   async function syncNow() {
     await load();
     if (!supported() || Notification.permission !== 'granted') return null;
@@ -100,7 +115,7 @@
     let sub = await reg.pushManager.getSubscription();
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(VAPID_PUBLIC) });
     const items = await buildItems();
-    const r = await post('/sync', { id: cfg.id, token: cfg.token, subscription: sub.toJSON(), items });
+    const r = await post('/sync', { id: cfg.id, token: cfg.token, subscription: sub.toJSON(), items, days: days(), loc: place(), name: S.settings.name });
     await save({ lastSync: Date.now(), lastCount: r.count, lastError: null });
     return r;
   }
@@ -122,6 +137,22 @@
     await syncNow();
     return post('/test', { id: cfg.id, token: cfg.token });
   }
+  /** AI 서버 호출 (이 기기의 id·token을 붙인다) */
+  async function call(path, body) {
+    await load();
+    const res = await fetch(SERVER + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: cfg.id, token: cfg.token }, body)) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(data.message || data.error || 'HTTP ' + res.status); e.code = data.error; throw e; }
+    return data;
+  }
+  /** 그날 아침 브리핑 (Claude가 쓴 글). 실패하면 null */
+  async function brief(date) {
+    try {
+      const r = await call('/brief', { date, events: dayEvents(date), loc: place(), name: S.settings.name });
+      return r.brief || null;
+    } catch (e) { return null; }
+  }
+
   async function status() {
     await load();
     return { supported: supported(), ios: isIOS(), standalone: standalone(), permission: 'Notification' in window ? Notification.permission : 'unsupported', lastSync: cfg.lastSync, lastCount: cfg.lastCount, lastError: cfg.lastError };
@@ -143,5 +174,5 @@
     setInterval(() => { if (DF.push.active && Date.now() - (cfg.lastSync || 0) > 6 * 36e5) sync(); }, 10 * 6e4);
   }
 
-  DF.push = { init, enable, test, status, sync, buildItems, get active() { return !!(cfg && supported() && Notification.permission === 'granted'); } };
+  DF.push = { init, enable, test, status, sync, buildItems, call, brief, get active() { return !!(cfg && supported() && Notification.permission === 'granted'); } };
 })(window.DF = window.DF || {});

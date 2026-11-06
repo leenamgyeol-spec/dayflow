@@ -147,10 +147,18 @@
   }
 
   // ───────── 아침 브리핑 모달 ─────────
-  async function showMorning(b) {
-    if (!b) { await loadWeather(); b = B.morning(T.now().date, weather); }
-    const m = U.modal(`<div class="modal-head"><h2>${icon('sunrise', 18)} 오늘의 브리핑</h2><button class="icon-btn" data-close aria-label="닫기">${icon('x')}</button></div>
-      <div class="modal-body briefing">${DF.chat.briefingHtml(b)}</div>
+  /** 아침 브리핑: Claude가 쓴 글이 있으면 그것을, 없으면(키 없음·오프라인) 앱이 만든 브리핑을 보여 준다 */
+  async function showMorning(b, date) {
+    date = date || T.now().date;
+    let html;
+    const ai = !b && DF.push ? await DF.push.brief(date) : null;
+    if (ai) html = DF.chat.aiBriefHtml(ai);
+    else {
+      if (!b) { await loadWeather(); b = B.morning(date, weather); }
+      html = DF.chat.briefingHtml(b);
+    }
+    const m = U.modal(`<div class="modal-head"><h2>${icon('sunrise', 18)} ${date === T.now().date ? '오늘의 브리핑' : esc(T.fmtDate(date)) + ' 브리핑'}</h2><button class="icon-btn" data-close aria-label="닫기">${icon('x')}</button></div>
+      <div class="modal-body briefing">${html}</div>
       <div class="modal-foot"><button class="btn ghost" data-chat>AI 비서에게 묻기</button><span class="grow"></span><button class="btn primary" data-close>좋아요</button></div>`, { wide: true });
     m.el.querySelector('[data-chat]').addEventListener('click', () => { m.close(); location.hash = '#/assistant'; });
   }
@@ -472,7 +480,12 @@
     const changed = current !== name;
     current = name;
     renderNav();
-    if (name === 'today') renderToday();
+    if (name === 'today') {
+      renderToday();
+      // 아침 브리핑 알림을 눌러 들어오면 바로 브리핑을 연다
+      const bd = params.get('brief');
+      if (bd && T.isDate(bd)) { history.replaceState(null, '', '#/today'); showMorning(null, bd); }
+    }
     else if (name === 'calendar') renderCalendar();
     else if (name === 'assistant') renderAssistant(params);
     else if (name === 'stats') renderStats();
